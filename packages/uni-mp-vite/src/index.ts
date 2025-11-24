@@ -35,6 +35,7 @@ import { uniRenderjsPlugin } from './plugins/renderjs'
 import { uniRuntimeHooksPlugin } from './plugins/runtimeHooks'
 import { uniSubpackagePlugin } from './plugins/subpackage'
 import { uniMiniProgramPluginPlugin } from './plugins/plugin'
+import { uniUaPlugin } from './plugins/ua'
 
 import * as vueCompilerDom from '@vue/compiler-dom'
 import * as uniCliShared from '@dcloudio/uni-cli-shared'
@@ -57,6 +58,7 @@ export default (options: UniMiniProgramPluginOptions) => {
   )
 
   return [
+    ...(process.env.UNI_PLATFORM === 'mp-weixin' ? [uniUaPlugin()] : []),
     ...(process.env.UNI_APP_X === 'true' && isNormalCompileTarget()
       ? [uniWorkersPlugin(), uniJavaScriptWorkersPlugin()]
       : []),
