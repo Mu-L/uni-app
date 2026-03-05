@@ -311,6 +311,10 @@ const promiseInterceptor = {
     }
     return new Promise((resolve, reject) => {
       res.then(res => {
+        if (!res) {
+          resolve(res);
+          return
+        }
         if (res[0]) {
           reject(res[0]);
         } else {
@@ -322,7 +326,7 @@ const promiseInterceptor = {
 };
 
 const SYNC_API_RE =
-  /^\$|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS/;
+  /^\$|__f__|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|rpx2px|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS|getFacialRecognitionMetaInfo/;
 
 const CONTEXT_API_RE = /^create|Manager$/;
 
@@ -382,7 +386,7 @@ function promisify (name, api) {
   }
   return function promiseApi (options = {}, ...params) {
     if (isFn(options.success) || isFn(options.fail) || isFn(options.complete)) {
-      return wrapperReturnValue(name, invokeApi(name, api, options, ...params))
+      return wrapperReturnValue(name, invokeApi(name, api, Object.assign({}, options), ...params))
     }
     return wrapperReturnValue(name, handlePromise(new Promise((resolve, reject) => {
       invokeApi(name, api, Object.assign({}, options, {
@@ -400,11 +404,14 @@ let deviceWidth = 0;
 let deviceDPR = 0;
 
 function checkDeviceWidth () {
-  const {
-    platform,
-    pixelRatio,
-    windowWidth
-  } = xhs.getSystemInfoSync(); // uni=>xhs runtime 编译目标是 uni 对象，内部不允许直接使用 uni
+  let windowWidth, pixelRatio, platform;
+
+  {
+    const baseInfo = xhs.getSystemInfoSync();
+    windowWidth = baseInfo.windowWidth;
+    pixelRatio = baseInfo.pixelRatio;
+    platform = baseInfo.platform;
+  }
 
   deviceWidth = windowWidth;
   deviceDPR = pixelRatio;
@@ -443,10 +450,19 @@ const LOCALE_ES = 'es';
 
 const messages = {};
 
+function getLocaleLanguage () {
+  let localeLanguage = '';
+  {
+    localeLanguage =
+      normalizeLocale(xhs.getSystemInfoSync().language) || LOCALE_EN;
+  }
+  return localeLanguage
+}
+
 let locale;
 
 {
-  locale = normalizeLocale(xhs.getSystemInfoSync().language) || LOCALE_EN;
+  locale = getLocaleLanguage();
 }
 
 function initI18nMessages () {
@@ -572,7 +588,7 @@ function getLocale$1 () {
       return app.$vm.$locale
     }
   }
-  return normalizeLocale(xhs.getSystemInfoSync().language) || LOCALE_EN
+  return getLocaleLanguage()
 }
 
 function setLocale$1 (locale) {
@@ -609,6 +625,7 @@ const interceptors = {
 var baseApi = /*#__PURE__*/Object.freeze({
   __proto__: null,
   upx2px: upx2px,
+  rpx2px: upx2px,
   getLocale: getLocale$1,
   setLocale: setLocale$1,
   onLocaleChange: onLocaleChange,
@@ -643,6 +660,46 @@ function addSafeAreaInsets (result) {
   }
 }
 
+function getOSInfo (system, platform) {
+  let osName = '';
+  let osVersion = '';
+
+  if (
+    platform &&
+    ( "mp-xhs" === 'mp-baidu')
+  ) {
+    osName = platform;
+    osVersion = system;
+  } else {
+    osName = system.split(' ')[0] || platform;
+    osVersion = system.split(' ')[1] || '';
+  }
+
+  osName = osName.toLocaleLowerCase();
+  switch (osName) {
+    case 'harmony': // alipay
+    case 'ohos': // weixin
+    case 'openharmony': // feishu
+      osName = 'harmonyos';
+      break
+    case 'iphone os': // alipay
+      osName = 'ios';
+      break
+    case 'mac': // weixin qq
+    case 'darwin': // feishu
+      osName = 'macos';
+      break
+    case 'windows_nt': // feishu
+      osName = 'windows';
+      break
+  }
+
+  return {
+    osName,
+    osVersion
+  }
+}
+
 function populateParameters (result) {
   const {
     brand = '', model = '', system = '',
@@ -655,12 +712,7 @@ function populateParameters (result) {
   const extraParam = {};
 
   // osName osVersion
-  let osName = '';
-  let osVersion = '';
-  {
-    osName = system.split(' ')[0] || '';
-    osVersion = system.split(' ')[1] || '';
-  }
+  const { osName, osVersion } = getOSInfo(system, platform);
   let hostVersion = version;
 
   // deviceType
@@ -682,7 +734,7 @@ function populateParameters (result) {
   let _SDKVersion = SDKVersion;
 
   // hostLanguage
-  const hostLanguage = language.replace(/_/g, '-');
+  const hostLanguage = (language || '').replace(/_/g, '-');
 
   // wx.getAccountInfoSync
 
@@ -693,6 +745,7 @@ function populateParameters (result) {
     appVersionCode: process.env.UNI_APP_VERSION_CODE,
     appLanguage: getAppLanguage(hostLanguage),
     uniCompileVersion: process.env.UNI_COMPILER_VERSION,
+    uniCompilerVersion: process.env.UNI_COMPILER_VERSION,
     uniRuntimeVersion: process.env.UNI_COMPILER_VERSION,
     uniPlatform: process.env.UNI_SUB_PLATFORM || process.env.UNI_PLATFORM,
     deviceBrand,
@@ -716,7 +769,8 @@ function populateParameters (result) {
     ua: undefined,
     hostPackageName: undefined,
     browserName: undefined,
-    browserVersion: undefined
+    browserVersion: undefined,
+    isUniAppX: false
   };
 
   Object.assign(result, parameters, extraParam);
@@ -758,7 +812,8 @@ function getAppLanguage (defaultLanguage) {
 }
 
 function getHostName (result) {
-  const _platform =  "mp-xhs".split('-')[1];
+  const _platform =
+      "mp-xhs".split('-')[1];
   let _hostName = result.hostName || _platform; // mp-jd
 
   return _hostName
@@ -780,9 +835,19 @@ const protocols = {
   // navigateTo,
   // redirectTo,
   // previewImage,
-  getSystemInfo,
-  getSystemInfoSync: getSystemInfo
   // getUserProfile
+  getSystemInfo,
+  getSystemInfoSync: getSystemInfo,
+  requestPayment: {
+    name: 'requestGuaranteeOrderPayment'
+  },
+  showActionSheet: {
+    args (fromArgs, toArgs) {
+      if (!fromArgs.itemColor) {
+        toArgs.itemColor = '#000000';
+      }
+    }
+  }
 };
 
 // 不支持的 API 列表
@@ -1119,12 +1184,20 @@ const offPushMessage = (fn) => {
   }
 };
 
+function __f__ (
+  type,
+  ...args
+) {
+  console[type].apply(console, args);
+}
+
 var api = /*#__PURE__*/Object.freeze({
   __proto__: null,
   getPushClientId: getPushClientId,
   onPushMessage: onPushMessage,
   offPushMessage: offPushMessage,
-  invokePushCallback: invokePushCallback
+  invokePushCallback: invokePushCallback,
+  __f__: __f__
 });
 
 const mocks = ['__route__', '__wxExparserNodeId__', '__wxWebviewId__'];
@@ -2073,7 +2146,10 @@ function parseBaseApp (vm, {
 
       delete this.$options.mpType;
       delete this.$options.mpInstance;
-      if (this.mpType === 'page' && typeof getApp === 'function') { // hack vue-i18n
+      if (
+        ( this.mpType === 'page') &&
+        typeof getApp === 'function'
+      ) { // hack vue-i18n
         const app = getApp();
         if (app.$vm && app.$vm.$i18n) {
           this._i18n = app.$vm.$i18n;
@@ -2119,12 +2195,21 @@ function parseBaseApp (vm, {
     });
   }
 
-  initAppLocale(Vue, vm, normalizeLocale(xhs.getSystemInfoSync().language) || LOCALE_EN);
+  initAppLocale(Vue, vm, getLocaleLanguage$1());
 
   initHooks(appOptions, hooks);
   initUnknownHooks(appOptions, vm.$options);
 
   return appOptions
+}
+
+function getLocaleLanguage$1 () {
+  let localeLanguage = '';
+  {
+    localeLanguage =
+      normalizeLocale(xhs.getSystemInfoSync().language) || LOCALE_EN;
+  }
+  return localeLanguage
 }
 
 function parseApp (vm) {
@@ -2186,8 +2271,6 @@ function stringifyQuery (obj, encodeStr = encode) {
   return res ? `?${res}` : ''
 }
 
-const isComponent2 = xhs.canIUse('component2');
-
 function initSpecialMethods (mpInstance) {
   if (!mpInstance.$vm) {
     return
@@ -2226,7 +2309,13 @@ const handleWrap = function (mp, destory) {
     } else {
       // TODO remove handleRef
       this[key] = function () {
-        mp.props[eventName].apply(this, arguments);
+        if (mp.props[eventName]) {
+          mp.props[eventName].apply(this, arguments);
+        } else {
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`UNIAPP[xhs handleWrap]:[${+new Date()}]`, `事件 ${eventName} 未绑定处理函数`);
+          }
+        }
       };
     }
   });
@@ -2249,39 +2338,36 @@ function parsePage (vuePageOptions) {
     onLoad (query) {
       const properties = this.props;
 
-      this.__query = query;
-      this.__options = {
+      const options = {
         mpType: 'page',
         mpInstance: this,
         propsData: properties
       };
-    },
-    onReady () {
-      // initChildVues(this)
+
       // 初始化 vue 实例
-      this.$vm = new VueComponent(this.__options);
+      this.$vm = new VueComponent(options);
+
+      initSpecialMethods(this);
 
       // 触发首次 setData
       this.$vm.$mount();
 
-      initSpecialMethods(this);
-      this.$vm._isMounted = true;
-      this.$vm.__call_hook('mounted');
-
-      // mounted => onLoad
-      this.options = this.__query;
-      this.$vm.$mp.query = this.__query; // 兼容 mpvue
-      const copyQuery = Object.assign({}, this.__query);
+      const copyQuery = Object.assign({}, query);
       delete copyQuery.__id__;
+
       this.$page = {
         fullPath: '/' + this.route + stringifyQuery(copyQuery)
       };
 
-      this.$vm.__call_hook('onLoad', this.__query);
-      this.$vm.__call_hook('onShow');
-      setTimeout(() => {
-        this.$vm.__call_hook('onReady');
-      });
+      this.options = query;
+      this.$vm.$mp.query = query; // 兼容 mpvue
+      this.$vm.__call_hook('onLoad', query);
+    },
+    onReady () {
+      // initChildVues(this)
+      this.$vm._isMounted = true;
+      this.$vm.__call_hook('mounted');
+      this.$vm.__call_hook('onReady');
     },
     onUnload () {
       this.$vm.__call_hook('onUnload');

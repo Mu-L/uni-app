@@ -8,7 +8,7 @@ import {
 } from './interceptor'
 
 const SYNC_API_RE =
-  /^\$|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS/
+  /^\$|__f__|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|rpx2px|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS|getFacialRecognitionMetaInfo/
 
 const CONTEXT_API_RE = /^create|Manager$/
 
@@ -74,7 +74,7 @@ export function promisify (name, api) {
   }
   return function promiseApi (options = {}, ...params) {
     if (isFn(options.success) || isFn(options.fail) || isFn(options.complete)) {
-      return wrapperReturnValue(name, invokeApi(name, api, options, ...params))
+      return wrapperReturnValue(name, invokeApi(name, api, Object.assign({}, options), ...params))
     }
     return wrapperReturnValue(name, handlePromise(new Promise((resolve, reject) => {
       invokeApi(name, api, Object.assign({}, options, {

@@ -11,7 +11,9 @@ const {
   getPlatformPush,
   getPlatformUniCloud,
   createSource,
-  deleteAsset
+  deleteAsset,
+  getDevUniConsoleCode,
+  runByHBuilderX
 } = require('@dcloudio/uni-cli-shared')
 
 const WebpackUniAppPlugin = require('../../packages/webpack-uni-app-loader/plugin/index')
@@ -21,6 +23,7 @@ const modifyVueLoader = require('../vue-loader')
 const {
   createTemplateCacheLoader
 } = require('../cache-loader')
+const { getFilterPaths } = require('./utils')
 
 function createUniMPPlugin () {
   const WebpackUniMPPlugin = require('@dcloudio/webpack-uni-mp-loader/lib/plugin/index-new')
@@ -36,7 +39,7 @@ function getProvides () {
   const uniCloudPath = path.resolve(__dirname, '../../packages/uni-cloud/dist/index.js')
   const provides = {
     uni: [uniPath, 'default'],
-    uniCloud: [uniCloudPath, 'default']
+    uniCloud: [uniCloudPath, 'uniCloud']
   }
 
   if (process.env.UNI_USING_VUE3) {
@@ -186,7 +189,7 @@ module.exports = {
     const pushCode = getPlatformPush()
     const uniCloudCode = getPlatformUniCloud()
 
-    let beforeCode = 'import \'uni-pages\';'
+    let beforeCode = getDevUniConsoleCode() + 'import \'uni-pages\';'
 
     const plugins = [
       new WebpackUniAppPlugin(),
@@ -195,20 +198,32 @@ module.exports = {
       ...createWxMpIndependentPlugins()
     ]
 
+    try {
+      if (runByHBuilderX) {
+        require(path.resolve(process.env.UNI_HBUILDERX_PLUGINS, 'uni_helpers/lib/bytenode'))
+        const {
+          UUWP
+        } = require(path.resolve(process.env.UNI_HBUILDERX_PLUGINS, 'uni_helpers'))
+        plugins.push(new UUWP(getFilterPaths))
+      }
+    } catch (e) {}
+
     if ((process.env.UNI_SUBPACKGE || process.env.UNI_MP_PLUGIN) && process.env.UNI_SUBPACKGE !== 'main') {
       plugins.push(new PreprocessAssetsPlugin())
     }
 
     {
-      const globalEnv = process.env.UNI_PLATFORM === 'mp-alipay' ? 'my' : 'wx';
-      [].concat(
-        process.env.UNI_MP_PLUGIN
-          ? process.env.UNI_MP_PLUGIN_MAIN
-          : JSON.parse(process.env.UNI_MP_PLUGIN_EXPORT)
-      ).forEach(fileName => addToUniEntry(fileName))
-      beforeCode += `
-// @ts-ignore
-${globalEnv}.__webpack_require_UNI_MP_PLUGIN__ = __webpack_require__;`
+      const globalEnv = process.env.UNI_PLATFORM === 'mp-alipay' ? 'my' : 'wx'
+      if (process.env.UNI_MP_PLUGIN) {
+        addToUniEntry(process.env.UNI_MP_PLUGIN_MAIN)
+      } else if (process.env.UNI_MP_PLUGIN_EXPORT) {
+        let exportFiles = JSON.parse(process.env.UNI_MP_PLUGIN_EXPORT)
+        if (typeof exportFiles === 'string') {
+          exportFiles = [exportFiles]
+        }
+        exportFiles.forEach(fileName => addToUniEntry(fileName))
+      }
+      beforeCode += `\n// @ts-ignore\n${globalEnv}.__webpack_require_UNI_MP_PLUGIN__ = __webpack_require__;`
     }
 
     const alias = { // 仅 mp-weixin
@@ -313,8 +328,29 @@ ${globalEnv}.__webpack_require_UNI_MP_PLUGIN__ = __webpack_require__;`
 
     webpackConfig.plugin('extract-css')
       .init((Plugin, args) => new Plugin({
-        filename: '[name]' + styleExt
+        filename: '[name]' + styleExt,
+        // mini-css-extract-plugin 2.3.0 版本以上可用
+        // https://github.com/webpack-contrib/mini-css-extract-plugin/releases/tag/v2.3.0
+        runtime: false
       }))
+    // 去除 mini-css-extract-plugin 2.3.0 以下版本的 css runtime
+    // https://github.com/webpack-contrib/mini-css-extract-plugin/blob/e200b083e5a437026d6021262d4ac56088b39e65/src/index.js#L273
+    if (require('semver').lt(require('mini-css-extract-plugin/package.json').version, '2.3.0')) {
+      const pluginName = 'skip-mini-css-extract-runtime'
+      webpackConfig.plugin(pluginName).use(
+        class SkipMiniCssExtractRuntimePlugin {
+          apply (compiler) {
+            compiler.hooks.thisCompilation.tap(pluginName, compilation => {
+              const { mainTemplate } = compilation
+              const reg = /\/\/ mini-css-extract-plugin CSS loading[\s\S]*installedCssChunks\[chunkId\] = 0;\s*\}\)\);\s*\}/
+              mainTemplate.hooks.requireEnsure.tap(pluginName, (source, chunk) => {
+                return reg.test(source) ? source.replace(reg, '') : source
+              })
+            })
+          }
+        }
+      )
+    }
 
     if (
       process.env.NODE_ENV === 'production' &&

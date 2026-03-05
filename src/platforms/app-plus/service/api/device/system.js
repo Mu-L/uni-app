@@ -1,6 +1,5 @@
 import { callApiSync } from '../util'
 import { getWindowInfo } from './get-window-info'
-import { sortObject } from 'uni-shared'
 
 let systemInfo = {}
 let _initSystemInfo = true
@@ -22,7 +21,7 @@ export function getDeviceInfo () {
   const {
     deviceBrand = '', deviceModel, osName,
     osVersion, deviceOrientation, deviceType,
-    deviceId
+    deviceId, osLanguage, osTheme, romName, romVersion
   } = systemInfo
 
   const brand = deviceBrand.toLowerCase()
@@ -37,7 +36,13 @@ export function getDeviceInfo () {
     deviceOrientation,
     deviceType,
     model: deviceModel,
+    osName,
+    osVersion,
+    osLanguage,
+    osTheme,
     platform: _osName,
+    romName,
+    romVersion,
     system: `${_osName === 'ios' ? 'iOS' : 'Android'} ${osVersion}`
   }
 }
@@ -46,9 +51,9 @@ export function getAppBaseInfo () {
   weexGetSystemInfoSync()
   const {
     hostPackageName, hostName, osLanguage,
-    hostVersion, hostLanguage, hostTheme,
+    hostVersion, hostLanguage, hostTheme, uniRuntimeVersion,
     appId, appName, appVersion, appVersionCode,
-    appWgtVersion
+    appWgtVersion, uniCompileVersion, uniPlatform
   } = systemInfo
 
   const appLanguage = uni
@@ -72,9 +77,14 @@ export function getAppBaseInfo () {
     hostLanguage,
     hostTheme,
     hostFontSizeSetting: undefined,
+    isUniAppX: false,
     language: osLanguage,
     SDKVersion: '',
     theme: plus.navigator.getUIStyle(),
+    uniPlatform,
+    uniRuntimeVersion,
+    uniCompileVersion,
+    uniCompilerVersion: uniCompileVersion,
     version: plus.runtime.innerVersion
   }
 }
@@ -117,5 +127,5 @@ export function getSystemInfo () {
     delete _systemInfo.theme
   }
 
-  return sortObject(_systemInfo)
+  return _systemInfo
 }

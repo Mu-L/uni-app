@@ -15,10 +15,24 @@ function assertCodegen (template, templateCode, renderCode = 'with(this){}', mpO
 }
 
 describe('mp:compiler-mp-alipay', () => {
+  it('generate template + v-for directive', () => {
+    assertCodegen(
+      '<view><template v-for="(item,index) in items" :key="index">hello</template></view>',
+      '<view><block a:for="{{items}}" a:for-item="item" a:for-index="index">hello</block></view>'
+    )
+  })
+
   it('generate v-for directive', () => {
     assertCodegen(
       '<view><view v-for="(item,index) in items" :key="index"></view></view>',
       '<view><view a:for="{{items}}" a:for-item="item" a:for-index="index" a:key="index"></view></view>'
+    )
+  })
+
+  it('generate v-for + v-for directive', () => {
+    assertCodegen(
+      '<template v-for="item in list"><view v-for="(val, idx) in item.value" :key="idx">{{ item.key }} -- {{ val }}</view></template>',
+      '<block a:for="{{list}}" a:for-item="item" a:for-index="__i0__" a:key="*this"><view a:for="{{item.value}}" a:for-item="val" a:for-index="idx" a:key="idx">{{item.key+" -- "+val}}</view></block>'
     )
   })
 
@@ -261,7 +275,7 @@ describe('mp:compiler-mp-alipay', () => {
   it('generate attrs with mergeVirtualHostAttributes', () => {
     assertCodegen(
       '<custom-view>hello world</custom-view>',
-      '<custom-view vue-id="551070e6-1" onVueInit="__l" virtualHostStyle="{{virtualHostStyle}}" virtualHostClass="{{(virtualHostClass)}}" vue-slots="{{[\'default\']}}">hello world</custom-view>',
+      "<custom-view vue-id=\"551070e6-1\" onVueInit=\"__l\" virtualHostStyle=\"{{virtualHostStyle}}\" virtualHostClass=\"{{(virtualHostClass||'')}}\" vue-slots=\"{{['default']}}\">hello world</custom-view>",
       'with(this){}',
       {
         mergeVirtualHostAttributes: true
@@ -269,7 +283,7 @@ describe('mp:compiler-mp-alipay', () => {
     )
     assertCodegen(
       '<custom-view :class="class1" :style="style">hello world</custom-view>',
-      '<custom-view vue-id="551070e6-1" onVueInit="__l" virtualHostStyle="{{(style)+virtualHostStyle}}" virtualHostClass="{{((class1)+\' \'+virtualHostClass)}}" vue-slots="{{[\'default\']}}">hello world</custom-view>',
+      "<custom-view vue-id=\"551070e6-1\" onVueInit=\"__l\" virtualHostStyle=\"{{(style)+virtualHostStyle}}\" virtualHostClass=\"{{((class1)+' '+(virtualHostClass||''))}}\" vue-slots=\"{{['default']}}\">hello world</custom-view>",
       'with(this){}',
       {
         mergeVirtualHostAttributes: true
@@ -277,7 +291,7 @@ describe('mp:compiler-mp-alipay', () => {
     )
     assertCodegen(
       '<view><custom-view>hello world</custom-view></view>',
-      '<view class="{{(virtualHostClass)}}" style="{{virtualHostStyle}}"><custom-view vue-id="551070e6-1" onVueInit="__l" vue-slots="{{[\'default\']}}">hello world</custom-view></view>',
+      "<view class=\"{{(virtualHostClass||'')}}\" style=\"{{virtualHostStyle}}\"><custom-view vue-id=\"551070e6-1\" onVueInit=\"__l\" vue-slots=\"{{['default']}}\">hello world</custom-view></view>",
       'with(this){}',
       {
         mergeVirtualHostAttributes: true
@@ -285,7 +299,7 @@ describe('mp:compiler-mp-alipay', () => {
     )
     assertCodegen(
       '<view><custom-view :class="class1" :style="style">hello world</custom-view></view>',
-      '<view class="{{(virtualHostClass)}}" style="{{virtualHostStyle}}"><custom-view vue-id="551070e6-1" onVueInit="__l" virtualHostStyle="{{(style)}}" virtualHostClass="{{(class1)}}" vue-slots="{{[\'default\']}}">hello world</custom-view></view>',
+      "<view class=\"{{(virtualHostClass||'')}}\" style=\"{{virtualHostStyle}}\"><custom-view vue-id=\"551070e6-1\" onVueInit=\"__l\" virtualHostStyle=\"{{(style)}}\" virtualHostClass=\"{{(class1)}}\" vue-slots=\"{{['default']}}\">hello world</custom-view></view>",
       'with(this){}',
       {
         mergeVirtualHostAttributes: true
@@ -346,6 +360,33 @@ describe('mp:compiler-mp-alipay', () => {
     assertCodegen(
       '<view>{{array.length}}</view>',
       '<view>{{array.length}}</view>'
+    )
+  })
+  it('span', () => {
+    assertCodegen(
+      '<span></span>',
+      '<label class="_span"></label>'
+    )
+  })
+  // join-group-chat
+  it('component: join-group-chat', () => {
+    assertCodegen(
+      '<join-group-chat template-id="your_template_id" />',
+      '<join-group-chat template-id="your_template_id"></join-group-chat>'
+    )
+  })
+  // subscribe-message
+  it('component: subscribe-message', () => {
+    assertCodegen(
+      '<subscribe-message template-id=\'xxxxx\' @complete="completeHandler" />',
+      "<subscribe-message template-id=\"xxxxx\" data-event-opts=\"{{[['complete',[['completeHandler',['$event']]]]]}}\" onComplete=\"__e\"></subscribe-message>"
+    )
+  })
+  // ad-feeds
+  it('component: ad-feeds', () => {
+    assertCodegen(
+      '<ad-feeds space-code="ad_tiny_123" />',
+      '<ad-feeds space-code="ad_tiny_123"></ad-feeds>'
     )
   })
 })

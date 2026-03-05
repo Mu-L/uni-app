@@ -1,4 +1,8 @@
 const compiler = require('../lib')
+const { tags } = require('../lib/native-tags')
+
+// 保存原始环境变量
+const originUNIPLATFORM = process.env.UNI_PLATFORM
 
 function assertCodegen (template, templateCode, renderCode = 'with(this){}', options = {}) {
   const res = compiler.compile(template, {
@@ -203,6 +207,10 @@ describe('mp:compiler', () => {
       '<view><block wx:if="{{$slots[one]}}"><slot name="{{one}}"></slot></block><block wx:else>text</block></view>'
     )
     assertCodegen(
+      '<view><slot name="1">text</slot></view>',
+      '<view><block wx:if="{{$slots[1]}}"><slot name="1"></slot></block><block wx:else>text</block></view>'
+    )
+    assertCodegen(
       '<view><slot :name="one+\'test\'">text</slot></view>',
       '<view><block wx:if="{{$slots[one+\'test\']}}"><slot name="{{one+\'test\'}}"></slot></block><block wx:else>text</block></view>'
     )
@@ -396,12 +404,92 @@ describe('mp:compiler', () => {
     //       `<view style="{{$root.s0}}">hello world</view>`,
     //       `with(this){var s0=__get_style(error);$mp.data=Object.assign({},{$root:{s0:s0}})}`
     //     )
+
+    assertCodegen(
+      '<view :style="false==false?{}:{}"></view>',
+      '<view style="{{(false==false?{}:{})}}"></view>'
+    )
+
+    assertCodegen(
+      '<view :style="false==false?{}:{}" style="color:red"></view>',
+      '<view style="{{\'color:red;\'+(false==false?{}:{})}}"></view>'
+    )
+
+    assertCodegen(
+      '<view style="color:red"></view>',
+      '<view style="color:red;"></view>'
+    )
+
+    assertCodegen(
+      '<view :style="{color:red}"></view>',
+      "<view style=\"{{'color:'+(red)+';'}}\"></view>"
+    )
+
+    assertCodegen(
+      '<view :style="{ [\'color\']: \'purple\'}"></view>',
+      '<view style="{{(\'color\')+\':\'+(\'purple\')+\';\'}}"></view>'
+    )
+
+    assertCodegen(
+      '<view :style="{ [color]: \'purple\'}"></view>',
+      '<view style="{{(color)+\':\'+(\'purple\')+\';\'}}"></view>'
+    )
+
+    assertCodegen(
+      '<view :style="{ [color1+color2]: \'purple\'}"></view>',
+      '<view style="{{(color1+color2)+\':\'+(\'purple\')+\';\'}}"></view>'
+    )
+
+    assertCodegen(
+      '<view :style="{ [color]: \'purple\'}" style="background-color: aqua;"></view>',
+      '<view style="{{\'background-color:aqua;\'+((color)+\':\'+(\'purple\')+\';\')}}"></view>'
+    )
+
+    assertCodegen(
+      '<view :style="{ [fn(\'color\')]: \'purple\'}"></view>',
+      '<view style="{{($root.m0)+\':\'+(\'purple\')+\';\'}}"></view>',
+      'with(this){var m0=fn("color");$mp.data=Object.assign({},{$root:{m0:m0}})}'
+    )
+
+    const baseStr = '$mp.data=Object.assign({},{$root:{s0:s0}})}'
+
+    // 运算得到
+    assertCodegen(
+      '<view :style="[\'color:red\']"></view>',
+      '<view style="{{$root.s0}}"></view>',
+      'with(this){var s0=__get_style(["color:red"]);' + baseStr
+    )
+    // 运算得到
+    assertCodegen(
+      '<view :style="{}"></view>',
+      '<view style="{{$root.s0}}"></view>',
+      'with(this){var s0=__get_style({});' + baseStr
+    )
+    // 运算得到
+    assertCodegen(
+      '<view :style="{...{}}"></view>',
+      '<view style="{{$root.s0}}"></view>',
+      'with(this){var s0=__get_style({...{}});' + baseStr
+    )
+
+    // 运算得到
+    assertCodegen(
+      '<view :style="{...(false==false?{}:{})}"></view>',
+      '<view style="{{$root.s0}}"></view>',
+      'with(this){var s0=__get_style({...(false==false?{}:{})});' + baseStr
+    )
+    // 运算得到
+    assertCodegen(
+      '<view :style="[].length===0?{}:{}"></view>',
+      '<view style="{{($root.g0===0?{}:{})}}"></view>',
+      'with(this){var g0=[].length;$mp.data=Object.assign({},{$root:{g0:g0}})}'
+    )
   })
 
   it('generate style with mergeVirtualHostAttributes', () => {
     assertCodegen(
       '<view style="color:red">hello world</view>',
-      '<view class="{{[virtualHostClass]}}" style="{{\'color:red;\'+virtualHostStyle}}">hello world</view>',
+      '<view class="{{[virtualHostClass]}}" style="{{\'color:red;\'+(virtualHostStyle||\'\')}}">hello world</view>',
       'with(this){}',
       {
         mergeVirtualHostAttributes: true
@@ -832,3 +920,44 @@ describe('mp:compiler', () => {
     )
   })
 })
+describe('mp:compiler-mp-* native-component', () => {
+  function assertCodegenInner (template, templateCode, platform, renderCode = 'with(this){}', options = {}) {
+    const res = compiler.compile(template, {
+      resourcePath: 'test.wxml',
+      mp: Object.assign({
+        minified: true,
+        isTest: true,
+        platform: platform
+      }, options)
+    })
+
+    expect(res.template).toBe(templateCode)
+    expect(res.render).toBe(renderCode)
+  }
+  function setup (platform) {
+    process.env.UNI_PLATFORM = platform
+    tags[platform].forEach(tag => {
+      assertCodegenInner(
+        `<${tag} test2="1"></${tag}>`,
+        `<${tag} test2="1"></${tag}>`,
+        platform
+      )
+    })
+  }
+
+  it('mp-* native-component', () => {
+    // mp-weixin 中 match-media 是内置组件
+    setup('mp-weixin')
+    setup('mp-qq')
+    setup('mp-toutiao')
+    setup('mp-baidu')
+    setup('mp-alipay')
+    setup('mp-jd')
+    setup('mp-xhs')
+    setup('mp-kuaishou')
+    setup('mp-harmony')
+  })
+})
+
+// 测试完成后恢复原始环境变量
+process.env.UNI_PLATFORM = originUNIPLATFORM

@@ -109,11 +109,6 @@ const protocols = {
       method: false
     }
   },
-  chooseVideo: {
-    args: {
-      camera: false
-    }
-  },
   scanCode: {
     args: {
       onlyFromCamera: false,
@@ -143,9 +138,18 @@ const protocols = {
       orderInfo: tt.pay ? 'orderInfo' : 'data'
     }
   },
-  getFileInfo: {
-    args: {
-      digestAlgorithm: false
+  showTabBar: {
+    args (fromArgs, toArgs) {
+      if (fromArgs.animation === undefined) {
+        toArgs.animation = false
+      }
+    }
+  },
+  hideTabBar: {
+    args (fromArgs, toArgs) {
+      if (fromArgs.animation === undefined) {
+        toArgs.animation = false
+      }
     }
   }
 }

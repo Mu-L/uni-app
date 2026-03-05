@@ -311,6 +311,10 @@ const promiseInterceptor = {
     }
     return new Promise((resolve, reject) => {
       res.then(res => {
+        if (!res) {
+          resolve(res);
+          return
+        }
         if (res[0]) {
           reject(res[0]);
         } else {
@@ -322,7 +326,7 @@ const promiseInterceptor = {
 };
 
 const SYNC_API_RE =
-  /^\$|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS/;
+  /^\$|__f__|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|rpx2px|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS/;
 
 const CONTEXT_API_RE = /^create|Manager$/;
 
@@ -400,11 +404,7 @@ let deviceWidth = 0;
 let deviceDPR = 0;
 
 function checkDeviceWidth () {
-  const {
-    platform,
-    pixelRatio,
-    windowWidth
-  } = wx.getSystemInfoSync(); // uni=>wx runtime 编译目标是 uni 对象，内部不允许直接使用 uni
+  const { windowWidth, pixelRatio, platform } =  wx.getSystemInfoSync(); // uni=>wx runtime 编译目标是 uni 对象，内部不允许直接使用 uni
 
   deviceWidth = windowWidth;
   deviceDPR = pixelRatio;
@@ -461,6 +461,7 @@ var en = {
 	"uni.scanCode.flash.on": "Tap to turn light on",
 	"uni.scanCode.flash.off": "Tap to turn light off",
 	"uni.startSoterAuthentication.authContent": "Fingerprint recognition",
+	"uni.startSoterAuthentication.waitingContent": "Unrecognizable",
 	"uni.picker.done": "Done",
 	"uni.picker.cancel": "Cancel",
 	"uni.video.danmu": "Danmu",
@@ -497,6 +498,7 @@ var es = {
 	"uni.scanCode.flash.on": "Toque para encender la luz",
 	"uni.scanCode.flash.off": "Toque para apagar la luz",
 	"uni.startSoterAuthentication.authContent": "Reconocimiento de huellas dactilares",
+	"uni.startSoterAuthentication.waitingContent": "Irreconocible",
 	"uni.picker.done": "OK",
 	"uni.picker.cancel": "Cancelar",
 	"uni.video.danmu": "Danmu",
@@ -533,6 +535,7 @@ var fr = {
 	"uni.scanCode.flash.on": "Appuyez pour activer l'éclairage",
 	"uni.scanCode.flash.off": "Appuyez pour désactiver l'éclairage",
 	"uni.startSoterAuthentication.authContent": "Reconnaissance de l'empreinte digitale",
+	"uni.startSoterAuthentication.waitingContent": "Méconnaissable",
 	"uni.picker.done": "OK",
 	"uni.picker.cancel": "Annuler",
 	"uni.video.danmu": "Danmu",
@@ -569,6 +572,7 @@ var zhHans = {
 	"uni.scanCode.flash.on": "轻触照亮",
 	"uni.scanCode.flash.off": "轻触关闭",
 	"uni.startSoterAuthentication.authContent": "指纹识别中...",
+	"uni.startSoterAuthentication.waitingContent": "无法识别",
 	"uni.picker.done": "完成",
 	"uni.picker.cancel": "取消",
 	"uni.video.danmu": "弹幕",
@@ -605,6 +609,7 @@ var zhHant = {
 	"uni.scanCode.flash.on": "輕觸照亮",
 	"uni.scanCode.flash.off": "輕觸關閉",
 	"uni.startSoterAuthentication.authContent": "指紋識別中...",
+	"uni.startSoterAuthentication.waitingContent": "無法識別",
 	"uni.picker.done": "完成",
 	"uni.picker.cancel": "取消",
 	"uni.video.danmu": "彈幕",
@@ -631,6 +636,15 @@ const messages = {};
     [LOCALE_ZH_HANS]: zhHans,
     [LOCALE_ZH_HANT]: zhHant
   });
+}
+
+function getLocaleLanguage () {
+  let localeLanguage = '';
+  {
+    localeLanguage =
+      normalizeLocale(wx.getSystemInfoSync().language) || LOCALE_EN;
+  }
+  return localeLanguage
 }
 
 let locale;
@@ -766,7 +780,7 @@ function getLocale$1 () {
       return app.$vm.$locale
     }
   }
-  return normalizeLocale(wx.getSystemInfoSync().language) || LOCALE_EN
+  return getLocaleLanguage()
 }
 
 function setLocale$1 (locale) {
@@ -803,6 +817,7 @@ const interceptors = {
 var baseApi = /*#__PURE__*/Object.freeze({
   __proto__: null,
   upx2px: upx2px,
+  rpx2px: upx2px,
   getLocale: getLocale$1,
   setLocale: setLocale$1,
   onLocaleChange: onLocaleChange,
@@ -1857,15 +1872,10 @@ class EventChannel {
 
 const eventChannels = {};
 
-const eventChannelStack = [];
-
 function getEventChannel (id) {
-  if (id) {
-    const eventChannel = eventChannels[id];
-    delete eventChannels[id];
-    return eventChannel
-  }
-  return eventChannelStack.shift()
+  const eventChannel = eventChannels[id];
+  delete eventChannels[id];
+  return eventChannel
 }
 
 const hooks = [
@@ -1923,7 +1933,10 @@ function parseBaseApp (vm, {
 
       delete this.$options.mpType;
       delete this.$options.mpInstance;
-      if (this.mpType === 'page' && typeof getApp === 'function') { // hack vue-i18n
+      if (
+        ( this.mpType === 'page') &&
+        typeof getApp === 'function'
+      ) { // hack vue-i18n
         const app = getApp();
         if (app.$vm && app.$vm.$i18n) {
           this._i18n = app.$vm.$i18n;
@@ -1969,12 +1982,21 @@ function parseBaseApp (vm, {
     });
   }
 
-  initAppLocale(Vue, vm, normalizeLocale(wx.getSystemInfoSync().language) || LOCALE_EN);
+  initAppLocale(Vue, vm, getLocaleLanguage$1());
 
   initHooks(appOptions, hooks);
   initUnknownHooks(appOptions, vm.$options);
 
   return appOptions
+}
+
+function getLocaleLanguage$1 () {
+  let localeLanguage = '';
+  {
+    localeLanguage =
+      normalizeLocale(wx.getSystemInfoSync().language) || LOCALE_EN;
+  }
+  return localeLanguage
 }
 
 function parseApp (vm) {

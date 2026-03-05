@@ -99,6 +99,20 @@ module.exports = function chainWebpack (platformOptions, vueOptions, api) {
               .use('extract-css-loader')
               .tap(options => {
                 options.esModule = false
+                // 参考 https://github.com/vuejs/vue-cli/commit/b41ed76c5ce54c618587f24b9d14c35cf31a96d4
+                // 修复 部分平台 css 内的资源路径不正确，如uni-icons在百度小程序上引用的字体文件路径
+                options.publicPath = '/'
+                return options
+              })
+          }
+        } else {
+          if (langRule.oneOf(type).uses.has('extract-css-loader')) {
+            langRule.oneOf(type)
+              .use('extract-css-loader')
+              .tap(options => {
+                // 参考 https://github.com/vuejs/vue-cli/commit/b41ed76c5ce54c618587f24b9d14c35cf31a96d4
+                // 修复 部分平台 css 内的资源路径不正确，如uni-icons在百度小程序上引用的字体文件路径
+                if (options) options.publicPath = '/'
                 return options
               })
           }
@@ -135,8 +149,7 @@ module.exports = function chainWebpack (platformOptions, vueOptions, api) {
 
     platformOptions.chainWebpack(webpackConfig, vueOptions, api)
     // define
-    const deferredCreated = process.env.UNI_PLATFORM === 'mp-toutiao' ||
-      process.env.UNI_PLATFORM === 'quickapp-webview'
+    const deferredCreated = process.env.UNI_PLATFORM === 'mp-toutiao' || process.env.UNI_PLATFORM === 'quickapp-webview'
     const defines = {
       // UNI_ENV好像没用
       __UNI_FEATURE_PROMISE__: JSON.stringify(false),
@@ -156,7 +169,14 @@ module.exports = function chainWebpack (platformOptions, vueOptions, api) {
       'process.env.UNI_STAT_DEBUG': process.env.UNI_STAT_DEBUG,
       'process.env.UNI_COMPILER_VERSION': JSON.stringify(process.env.UNI_COMPILER_VERSION),
       'process.env.UNI_APP_VERSION_NAME': JSON.stringify(process.env.UNI_APP_VERSION_NAME),
-      'process.env.UNI_APP_VERSION_CODE': JSON.stringify(process.env.UNI_APP_VERSION_CODE)
+      'process.env.UNI_APP_VERSION_CODE': JSON.stringify(process.env.UNI_APP_VERSION_CODE),
+      'process.env.UNI_SOCKET_HOSTS': JSON.stringify(process.env.UNI_SOCKET_HOSTS || ''),
+      'process.env.UNI_SOCKET_PORT': JSON.stringify(process.env.UNI_SOCKET_PORT || ''),
+      'process.env.UNI_SOCKET_ID': JSON.stringify(process.env.UNI_SOCKET_ID || ''),
+      'process.env.UNI_CONSOLE_KEEP_ORIGINAL': JSON.stringify(
+        !(process.env.UNI_PLATFORM === 'mp-harmony' ||
+          process.env.UNI_PLATFORM === 'app-harmony')
+      )
     }
     if (process.env.UNI_USING_VUE3) {
       Object.assign(defines, {

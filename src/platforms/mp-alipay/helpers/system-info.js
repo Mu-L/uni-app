@@ -17,17 +17,27 @@ function addUuid (result) {
 
 function normalizePlatform (result) {
   let platform = result.platform ? result.platform.toLowerCase() : 'devtools'
-  if (!~['android', 'ios'].indexOf(platform)) {
-    platform = 'devtools'
+  if (my.canIUse('isIDE')) {
+    // @ts-expect-error Property 'isIDE' does not exist on type 'typeof my'
+    platform = my.isIDE ? 'devtools' : platform
   }
   result.platform = platform
 }
 
+function reviseScreenSize (result) {
+  // 支付宝: 10.2.0+ 修正屏幕宽度和高度 https://opendocs.alipay.com/mini/api/gawhvz
+  if (result.screen) {
+    result.screenWidth = result.screen.width
+    result.screenHeight = result.screen.height
+  }
+}
+
 export default {
   returnValue: function (result) {
+    reviseScreenSize(result)
     addUuid(result)
     addSafeAreaInsets(result)
-    normalizePlatform(result)
     populateParameters(result)
+    normalizePlatform(result)
   }
 }

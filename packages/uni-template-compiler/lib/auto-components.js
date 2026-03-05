@@ -105,13 +105,15 @@ function compileTemplate (source, options, compile) {
 
 const compilerModule = {
   preTransformNode (el, options) {
-    if (el.tag === 'match-media' && process.env.UNI_PLATFORM !== 'mp-weixin') {
+    const supportedPlatforms = ['mp-weixin', 'mp-jd']
+    const unsupportedPlatforms = ['mp-xhs', 'mp-kuaishou'] // 小红书和快手无原生 match-media 组件，使用 uni-match-media 组件会报错 uni.createMediaQueryObserver is not a function
+    if (el.tag === 'match-media' && ![...supportedPlatforms, ...unsupportedPlatforms].includes(process.env.UNI_PLATFORM)) {
       el.tag = 'uni-match-media'
     }
     if (process.env.UNI_PLATFORM === 'quickapp-native') {
       // 排查所有标签
       (options.isUnaryTag.autoComponents || (options.isUnaryTag.autoComponents = new Set())).add(el.tag)
-    } else if (isComponent(el.tag) && el.tag !== 'App') { // App.vue
+    } else if (isComponent(el.tag, options.mp && options.mp.platform) && el.tag !== 'App') { // App.vue
       // 挂在 isUnaryTag 上边,可以保证外部访问到
       (options.isUnaryTag.autoComponents || (options.isUnaryTag.autoComponents = new Set())).add(el.tag)
     }

@@ -33,7 +33,7 @@ module.exports = {
     if (isPlainObject(scriptOptions.define)) {
       Object.keys(uniAppOptions.scripts).forEach(scriptName => {
         if (scriptName !== name) {
-          const define = uniAppOptions.scripts[scriptName].define
+          const define = uniAppOptions.scripts[scriptName].define || {}
           Object.keys(define).forEach(name => {
             if (typeof scriptOptions.define[name] !== 'undefined') {
               delete define[name]
@@ -41,7 +41,7 @@ module.exports = {
               define[name] = false
             }
           })
-          Object.assign(scriptOptions.define, define)
+          scriptOptions.define = Object.assign({}, define, scriptOptions.define)
         }
       })
     }

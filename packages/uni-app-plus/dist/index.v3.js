@@ -282,6 +282,7 @@ var serviceContext = (function () {
     'initUTSPackageName',
     'requireUTSPlugin',
     'registerUTSPlugin',
+    'registerUTSInterface'
   ];
 
   const ad = [
@@ -296,7 +297,9 @@ var serviceContext = (function () {
     'getPushClientId',
     'onPushMessage',
     'offPushMessage',
-    'createPushMessage'
+    'createPushMessage',
+    'getChannelManager',
+    'getFacialRecognitionMetaInfo'
   ];
 
   const apis = [
@@ -412,6 +415,7 @@ var serviceContext = (function () {
   const _toString = Object.prototype.toString;
   const hasOwnProperty = Object.prototype.hasOwnProperty;
 
+  const isArray = Array.isArray;
   const extend = Object.assign;
 
   function isFn (fn) {
@@ -672,35 +676,86 @@ var serviceContext = (function () {
     return borderStyle
   }
 
-  function normallizeStyles (pageStyle, themeConfig = {}, mode = 'light') {
+  function normalizeTitleColor (titleColor) {
+    return titleColor === 'black' ? '#000000' : '#ffffff'
+  }
+
+  function resolveStringStyleItem (modeStyle, styleItem, key) {
+    if (isString(styleItem) && styleItem.startsWith('@')) {
+      const _key = styleItem.replace('@', '');
+      let _styleItem = modeStyle[_key] || styleItem;
+      switch (key) {
+        case 'titleColor':
+          _styleItem = normalizeTitleColor(_styleItem);
+          break
+        case 'borderStyle':
+          _styleItem = normalizeTabBarStyles(_styleItem);
+          break
+      }
+      return _styleItem
+    }
+    return styleItem
+  }
+
+  function normalizeStyles (pageStyle, themeConfig = {}, mode = 'light') {
     const modeStyle = themeConfig[mode];
     const styles = {};
-    if (!modeStyle) {
-      return styles
-    }
-    Object.keys(pageStyle).forEach((key) => {
+
+    if (typeof modeStyle === 'undefined' || !pageStyle) return pageStyle
+
+    Object.keys(pageStyle).forEach(key => {
       const styleItem = pageStyle[key]; // Object Array String
-      styles[key] = (() => {
-        if (isPlainObject(styleItem)) {
-          return normallizeStyles(styleItem, themeConfig, mode)
-        } else if (Array.isArray(styleItem)) {
-          return styleItem.map((item) => isPlainObject(item)
-            ? normallizeStyles(item, themeConfig, mode)
-            : item)
-        } else if (isStr(styleItem) && styleItem.startsWith('@')) {
-          const _key = styleItem.replace('@', '');
-          let _styleItem = modeStyle[_key] || styleItem;
-          switch (key) {
-            case 'borderStyle':
-              _styleItem = normalizeTabBarStyles(_styleItem);
-              break
-          }
-          return _styleItem
+
+      const parseStyleItem = () => {
+        if (isPlainObject(styleItem)) { return normalizeStyles(styleItem, themeConfig, mode) }
+
+        if (isArray(styleItem)) {
+          return styleItem.map(item => {
+            if (isPlainObject(item)) { return normalizeStyles(item, themeConfig, mode) }
+            return resolveStringStyleItem(modeStyle, item)
+          })
         }
-        return styleItem
-      })();
+
+        return resolveStringStyleItem(modeStyle, styleItem, key)
+      };
+
+      styles[key] = parseStyleItem();
     });
+
     return styles
+  }
+
+  const unitRE = new RegExp('"[^"]+"|\'[^\']+\'|url\\([^)]+\\)|(\\d*\\.?\\d+)[r|u]px', 'g');
+
+  function toFixed (number, precision) {
+    const multiplier = Math.pow(10, precision + 1);
+    const wholeNumber = Math.floor(number * multiplier);
+    return (Math.round(wholeNumber / 10) * 10) / multiplier
+  }
+
+  const defaultRpx2Unit = {
+    unit: 'rem',
+    unitRatio: 10 / 320,
+    unitPrecision: 5
+  };
+
+  function createRpx2Unit (unit, unitRatio, unitPrecision) {
+    // ignore: rpxCalcIncludeWidth
+    /**
+     * @param {string} val
+     * @returns {string}
+     */
+    return (val) =>
+      val.replace(unitRE, (m, $1) => {
+        if (!$1) {
+          return m
+        }
+        if (unitRatio === 1) {
+          return `${$1}${unit}`
+        }
+        const value = toFixed(parseFloat($1) * unitRatio, unitPrecision);
+        return value === 0 ? '0' : `${value}${unit}`
+      })
   }
 
   /**
@@ -918,6 +973,10 @@ var serviceContext = (function () {
       }
       return new Promise((resolve, reject) => {
         res.then(res => {
+          if (!res) {
+            resolve(res);
+            return
+          }
           if (res[0]) {
             reject(res[0]);
           } else {
@@ -929,7 +988,7 @@ var serviceContext = (function () {
   };
 
   const SYNC_API_RE =
-    /^\$|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS/;
+    /^\$|__f__|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|rpx2px|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS|getFacialRecognitionMetaInfo/;
 
   const CONTEXT_API_RE = /^create|Manager$/;
 
@@ -995,7 +1054,7 @@ var serviceContext = (function () {
     }
     return function promiseApi (options = {}, ...params) {
       if (isFn(options.success) || isFn(options.fail) || isFn(options.complete)) {
-        return wrapperReturnValue(name, invokeApi(name, api, options, ...params))
+        return wrapperReturnValue(name, invokeApi(name, api, Object.assign({}, options), ...params))
       }
       return wrapperReturnValue(name, handlePromise(new Promise((resolve, reject) => {
         invokeApi(name, api, Object.assign({}, options, {
@@ -1696,6 +1755,7 @@ var serviceContext = (function () {
   	"uni.scanCode.flash.on": "Tap to turn light on",
   	"uni.scanCode.flash.off": "Tap to turn light off",
   	"uni.startSoterAuthentication.authContent": "Fingerprint recognition",
+  	"uni.startSoterAuthentication.waitingContent": "Unrecognizable",
   	"uni.picker.done": "Done",
   	"uni.picker.cancel": "Cancel",
   	"uni.video.danmu": "Danmu",
@@ -1732,6 +1792,7 @@ var serviceContext = (function () {
   	"uni.scanCode.flash.on": "Toque para encender la luz",
   	"uni.scanCode.flash.off": "Toque para apagar la luz",
   	"uni.startSoterAuthentication.authContent": "Reconocimiento de huellas dactilares",
+  	"uni.startSoterAuthentication.waitingContent": "Irreconocible",
   	"uni.picker.done": "OK",
   	"uni.picker.cancel": "Cancelar",
   	"uni.video.danmu": "Danmu",
@@ -1768,6 +1829,7 @@ var serviceContext = (function () {
   	"uni.scanCode.flash.on": "Appuyez pour activer l'éclairage",
   	"uni.scanCode.flash.off": "Appuyez pour désactiver l'éclairage",
   	"uni.startSoterAuthentication.authContent": "Reconnaissance de l'empreinte digitale",
+  	"uni.startSoterAuthentication.waitingContent": "Méconnaissable",
   	"uni.picker.done": "OK",
   	"uni.picker.cancel": "Annuler",
   	"uni.video.danmu": "Danmu",
@@ -1804,6 +1866,7 @@ var serviceContext = (function () {
   	"uni.scanCode.flash.on": "轻触照亮",
   	"uni.scanCode.flash.off": "轻触关闭",
   	"uni.startSoterAuthentication.authContent": "指纹识别中...",
+  	"uni.startSoterAuthentication.waitingContent": "无法识别",
   	"uni.picker.done": "完成",
   	"uni.picker.cancel": "取消",
   	"uni.video.danmu": "弹幕",
@@ -1840,6 +1903,7 @@ var serviceContext = (function () {
   	"uni.scanCode.flash.on": "輕觸照亮",
   	"uni.scanCode.flash.off": "輕觸關閉",
   	"uni.startSoterAuthentication.authContent": "指紋識別中...",
+  	"uni.startSoterAuthentication.waitingContent": "無法識別",
   	"uni.picker.done": "完成",
   	"uni.picker.cancel": "取消",
   	"uni.video.danmu": "彈幕",
@@ -2304,9 +2368,14 @@ var serviceContext = (function () {
     },
     extension: {
       type: Array,
-      default: [''],
       validator (extension, params) {
-        if (extension.length === 0) { return 'param extension should not be empty.' }
+        if (!extension) {
+          if (params.type === 'all' || params.type === '*' || !params.type) {
+            params.extension = [''];
+          } else {
+            params.extension = ['*'];
+          }
+        } else if (extension.length === 0) { return 'param extension should not be empty.' }
       }
     }
   };
@@ -4075,6 +4144,7 @@ var serviceContext = (function () {
   }
 
   function upx2px$1 (number, newDeviceWidth) {
+    console.log('+++++ upx2px', number);
     if (deviceWidth === 0) {
       checkDeviceWidth();
     }
@@ -6236,7 +6306,7 @@ var serviceContext = (function () {
           case e.AUTHENTICATE_MISMATCH:
             if (waiting) {
               clearTimeout(waitingTimer);
-              waiting.setTitle('无法识别');
+              waiting.setTitle(t('uni.startSoterAuthentication.waitingContent'));
               waitingTimer = setTimeout(() => {
                 waiting && waiting.setTitle(waitingTitle);
               }, 1000);
@@ -6353,7 +6423,7 @@ var serviceContext = (function () {
     const windowOptions = routeOptions.window;
     const titleNView = windowOptions.titleNView;
     routeOptions.meta.statusBarStyle =
-      windowOptions.navigationBarTextStyle === 'black' ? 'dark' : 'light';
+      windowOptions.navigationBarTextStyle === 'white' ? 'light' : 'dark';
     if (
       // 无头
       titleNView === false ||
@@ -6379,14 +6449,13 @@ var serviceContext = (function () {
       autoBackButton: !routeOptions.meta.isQuit,
       titleText:
         titleImage === '' ? windowOptions.navigationBarTitleText || '' : '',
-      titleColor:
-        windowOptions.navigationBarTextStyle === 'black' ? '#000000' : '#ffffff',
+      titleColor: normalizeTitleColor(windowOptions.navigationBarTextStyle),
       type: titleNViewTypeList[transparentTitle],
       backgroundColor:
         /^#[a-z0-9]{6}$/i.test(navigationBarBackgroundColor) ||
         navigationBarBackgroundColor === 'transparent'
           ? navigationBarBackgroundColor
-          : '#f7f7f7',
+          : '#f8f8f8',
       tags:
         titleImage === ''
           ? []
@@ -6485,10 +6554,15 @@ var serviceContext = (function () {
     }
   }
 
-  const REGEX_UPX = /(\d+(\.\d+)?)[r|u]px/g;
+  const rpx2unit = createRpx2Unit(defaultRpx2Unit.unit, defaultRpx2Unit.unitRatio, defaultRpx2Unit.unitPrecision);
 
   function transformCSS (css) {
-    return css.replace(REGEX_UPX, (a, b) => {
+    const config = __uniConfig.globalStyle || __uniConfig.window || {};
+    if (config.dynamicRpx === true) {
+      return rpx2unit(css)
+    }
+
+    return css.replace(unitRE, (a, b) => {
       return uni.upx2px(parseInt(b) || 0) + 'px'
     })
   }
@@ -7641,7 +7715,7 @@ var serviceContext = (function () {
         theme = systemInfo.hostTheme;
       }
 
-      parsedStyle = normallizeStyles(pageStyle, __uniConfig.themeConfig, theme);
+      parsedStyle = normalizeStyles(pageStyle, __uniConfig.themeConfig, theme);
       return parsedStyle
     }
     return pageStyle
@@ -7652,23 +7726,24 @@ var serviceContext = (function () {
       const fn = () => {
         const {
           list = [], color, selectedColor,
-          backgroundColor, borderStyle
+          backgroundColor, borderStyle, midButton
         } = parseTheme(options);
-        const tabbarStyle = {
-          color,
-          selectedColor,
-          backgroundColor,
-          borderStyle
-        };
-
-        tabBar && tabBar.setTabBarStyle(tabbarStyle);
-        tabBar && tabBar.setTabBarItems({
-          list: list.map((item) => ({
-            iconPath: item.iconPath,
-            selectedIconPath: item.selectedIconPath,
-            visible: item.visible
-          }))
-        });
+        if (tabBar) {
+          tabBar.setTabBarStyle({
+            color,
+            selectedColor,
+            backgroundColor,
+            borderStyle,
+            midButton
+          });
+          tabBar.setTabBarItems({
+            list: list.map((item) => ({
+              iconPath: item.iconPath,
+              selectedIconPath: item.selectedIconPath,
+              visible: item.visible
+            }))
+          });
+        }
         // TODO 暂未实现
         // tabBar && tabBar.setAnimationAlphaBGColor(parseTheme((__uniConfig.window || {}).backgroundColor, false))
       };
@@ -7823,7 +7898,14 @@ var serviceContext = (function () {
         });
       });
       tabBar && tabBar.onClick(({ index }) => {
+        const fromIndex = config.selectedIndex;
         clickCallback(config.list[index], index);
+        const toIndex = config.selectedIndex;
+        if (index !== toIndex) {
+          tabBar.switchSelect({
+            index: fromIndex
+          });
+        }
       });
       tabBar && tabBar.onMidButtonClick(() => {
         publish('onTabBarMidButtonTap', {});
@@ -7852,6 +7934,7 @@ var serviceContext = (function () {
         tabBar && tabBar.switchSelect({
           index
         });
+        this.config.selectedIndex = index;
         return true
       }
       return false
@@ -8001,7 +8084,7 @@ var serviceContext = (function () {
     const {
       deviceBrand = '', deviceModel, osName,
       osVersion, deviceOrientation, deviceType,
-      deviceId
+      deviceId, osLanguage, osTheme, romName, romVersion
     } = systemInfo;
 
     const brand = deviceBrand.toLowerCase();
@@ -8017,7 +8100,13 @@ var serviceContext = (function () {
       deviceType,
       model: deviceModel,
       platform: _osName,
-      system: `${_osName === 'ios' ? 'iOS' : 'Android'} ${osVersion}`
+      system: `${_osName === 'ios' ? 'iOS' : 'Android'} ${osVersion}`,
+      osName,
+      osVersion,
+      osLanguage,
+      osTheme,
+      romName,
+      romVersion
     }
   }
 
@@ -8025,9 +8114,9 @@ var serviceContext = (function () {
     weexGetSystemInfoSync();
     const {
       hostPackageName, hostName, osLanguage,
-      hostVersion, hostLanguage, hostTheme,
+      hostVersion, hostLanguage, hostTheme, uniRuntimeVersion,
       appId, appName, appVersion, appVersionCode,
-      appWgtVersion
+      appWgtVersion, uniCompileVersion, uniPlatform
     } = systemInfo;
 
     const appLanguage = uni
@@ -8054,7 +8143,12 @@ var serviceContext = (function () {
       language: osLanguage,
       SDKVersion: '',
       theme: plus.navigator.getUIStyle(),
-      version: plus.runtime.innerVersion
+      version: plus.runtime.innerVersion,
+      isUniAppX: false,
+      uniPlatform,
+      uniRuntimeVersion,
+      uniCompileVersion,
+      uniCompilerVersion: uniCompileVersion
     }
   }
 
@@ -8144,11 +8238,11 @@ var serviceContext = (function () {
     openAppAuthorizeSetting(ret => {
       if (ret.type === 'success') {
         invoke$1(callbackId, {
-          errMsg: 'getClipboardData:ok'
+          errMsg: 'openAppAuthorizeSetting:ok'
         });
       } else {
         invoke$1(callbackId, {
-          errMsg: 'getClipboardData:fail'
+          errMsg: 'openAppAuthorizeSetting:fail'
         });
       }
     });
@@ -10112,6 +10206,12 @@ var serviceContext = (function () {
     });
   }
 
+  let channelManager;
+
+  function getChannelManager () {
+    return channelManager || (channelManager = plus.push.getChannelManager())
+  }
+
   function requireNativePlugin$1 (name) {
     return weex.requireModule(name)
   }
@@ -10532,46 +10632,145 @@ var serviceContext = (function () {
     return getEnterOptions()
   }
 
+  // 生成的 uts.js 需要同步到 vue2 src/platforms/app-plus/service/api/plugin
   let callbackId = 1;
   let proxy;
-  const callbacks$4 = {};
-  function normalizeArg(arg) {
+  const keepAliveCallbacks = {};
+  function isUniElement(obj) {
+      return obj && typeof obj.getNodeId === 'function' && obj.pageId;
+  }
+  function isComponentPublicInstance(instance) {
+      return instance && instance.$ && instance.$.proxy === instance;
+  }
+  function parseElement(obj) {
+      if (isUniElement(obj)) {
+          return obj;
+      }
+  }
+  function parseComponentPublicInstance(obj) {
+      if (isComponentPublicInstance(obj)) {
+          return obj.$el;
+      }
+  }
+  function serializeArrayBuffer(obj) {
+      // @ts-expect-error ios 提供了 ArrayBufferWrapper 类来处理 ArrayBuffer 的传递
+      if (typeof ArrayBufferWrapper !== 'undefined') {
+          // @ts-expect-error
+          return { __type__: 'ArrayBuffer', value: new ArrayBufferWrapper(obj) };
+      }
+      return { __type__: 'ArrayBuffer', value: obj };
+  }
+  // 序列化 UniElement | ComponentPublicInstance
+  function serializeUniElement(el, type) {
+      let nodeId = '';
+      let pageId = '';
+      // 非 x 可能不存在 getNodeId 方法？
+      if (el && el.getNodeId) {
+          pageId = el.pageId;
+          nodeId = el.getNodeId();
+      }
+      return { __type__: type, pageId, nodeId };
+  }
+  function toRaw(observed) {
+      const raw = observed && observed.__v_raw;
+      return raw ? toRaw(raw) : observed;
+  }
+  function normalizeArg(arg, callbacks, keepAlive, context) {
+      arg = toRaw(arg);
       if (typeof arg === 'function') {
-          // 查找该函数是否已缓存
-          const oldId = Object.keys(callbacks$4).find((id) => callbacks$4[id] === arg);
-          const id = oldId ? parseInt(oldId) : callbackId++;
-          callbacks$4[id] = arg;
+          let id;
+          if (keepAlive) {
+              // 仅keepAlive时，需要查找缓存，非keepAlive时，直接创建，避免函数被复用时，回调函数被误删
+              const oldId = Object.keys(callbacks).find((id) => callbacks[id] === arg);
+              id = oldId ? parseInt(oldId) : callbackId++;
+              callbacks[id] = arg;
+          }
+          else {
+              id = callbackId++;
+              callbacks[id] = arg;
+          }
           return id;
       }
-      else if (isPlainObject(arg)) {
-          Object.keys(arg).forEach((name) => {
-              arg[name] = normalizeArg(arg[name]);
-          });
+      else if (isArray(arg)) {
+          context.depth++;
+          return arg.map((item) => normalizeArg(item, callbacks, keepAlive, context));
+          // 为啥还要额外判断了isUniElement?，isPlainObject不是包含isUniElement的逻辑吗？为了避免出bug，保留此逻辑
+      }
+      else if (arg instanceof ArrayBuffer) {
+          if (context.depth > 0) {
+              context.nested = true;
+          }
+          return serializeArrayBuffer(arg);
+      }
+      else if (isPlainObject(arg) || isUniElement(arg)) {
+          const uniElement = parseElement(arg);
+          const componentPublicInstanceUniElement = !uniElement
+              ? parseComponentPublicInstance(arg)
+              : undefined;
+          const el = uniElement || componentPublicInstanceUniElement;
+          if (el) {
+              if (context.depth > 0) {
+                  context.nested = true;
+              }
+              return serializeUniElement(el, uniElement ? 'UniElement' : 'ComponentPublicInstance');
+          }
+          else {
+              // 必须复制，否则会污染原始对象，比如：
+              // const obj = {
+              //   a: 1,
+              //   b: () => {}
+              // }
+              // const newObj = normalizeArg(obj, {}, false)
+              // newObj.a = 2 // 这会污染原始对象 obj
+              const newArg = {};
+              Object.keys(arg).forEach((name) => {
+                  context.depth++;
+                  newArg[name] = normalizeArg(arg[name], callbacks, keepAlive, context);
+              });
+              return newArg;
+          }
       }
       return arg;
   }
   function initUTSInstanceMethod(async, opts, instanceId, proxy) {
-      return initProxyFunction(async, opts, instanceId, proxy);
+      return initProxyFunction('method', async, opts, instanceId, proxy);
   }
   function getProxy() {
       if (!proxy) {
-          proxy = uni.requireNativePlugin('UTS-Proxy');
+          {
+              proxy = uni.requireNativePlugin('UTS-Proxy');
+          }
       }
       return proxy;
   }
-  function resolveSyncResult(res, returnOptions, instanceId, proxy) {
+  function resolveSyncResult(args, res, returnOptions, instanceId, proxy) {
+      if ((process.env.NODE_ENV !== 'production')) {
+          console.log('uts.invokeSync.result', JSON.stringify([res, returnOptions, instanceId, typeof proxy]));
+      }
+      if (!res) {
+          throw new Error('返回值为：' +
+              JSON.stringify(res) +
+              '；请求参数为：' +
+              JSON.stringify(args));
+      }
       // devtools 环境是字符串？
       if (isString(res)) {
-          res = JSON.parse(res);
-      }
-      if ((process.env.NODE_ENV !== 'production')) {
-          console.log('uts.invokeSync.result', res, returnOptions, instanceId, typeof proxy);
+          try {
+              res = JSON.parse(res);
+          }
+          catch (e) {
+              throw new Error(`JSON.parse(${res}): ` + e);
+          }
       }
       if (res.errMsg) {
           throw new Error(res.errMsg);
       }
       if (returnOptions) {
           if (returnOptions.type === 'interface' && typeof res.params === 'number') {
+              // 返回了 0
+              if (!res.params) {
+                  return null;
+              }
               if (res.params === instanceId && proxy) {
                   return proxy;
               }
@@ -10591,45 +10790,65 @@ var serviceContext = (function () {
       if ((process.env.NODE_ENV !== 'production')) {
           console.log('uts.invokePropGetter.args', args);
       }
-      return resolveSyncResult(getProxy().invokeSync(args, () => { }));
+      return resolveSyncResult(args, getProxy().invokeSync(args, () => { }));
   }
-  function initProxyFunction(async, { moduleName, moduleType, package: pkg, class: cls, name: propOrMethod, method, companion, params: methodParams, return: returnOptions, errMsg, }, instanceId, proxy) {
-      const invokeCallback = ({ id, name, params, keepAlive, }) => {
-          const callback = callbacks$4[id];
-          if (callback) {
-              callback(...params);
-              if (!keepAlive) {
-                  delete callbacks$4[id];
-              }
-          }
-          else {
-              console.error(`${pkg}${cls}.${propOrMethod} ${name} is not found`);
-          }
-      };
+  function initProxyFunction(type, async, { moduleName, moduleType, package: pkg, class: cls, name: methodName, method, companion, keepAlive, params: methodParams, return: returnOptions, errMsg, }, instanceId, proxy) {
+      if (!keepAlive) {
+          keepAlive =
+              (methodName.indexOf('on') === 0 || methodName.indexOf('off') === 0) &&
+                  methodParams.length === 1 &&
+                  methodParams[0].type === 'UTSCallback';
+      }
       const baseArgs = instanceId
           ? {
               moduleName,
               moduleType,
               id: instanceId,
-              name: propOrMethod,
+              type,
+              name: methodName,
               method: methodParams,
+              nested: false,
+              keepAlive,
           }
           : {
               moduleName,
               moduleType,
               package: pkg,
               class: cls,
-              name: method || propOrMethod,
+              name: method || methodName,
+              type,
               companion,
               method: methodParams,
+              nested: false,
+              keepAlive,
           };
       return (...args) => {
           if (errMsg) {
               throw new Error(errMsg);
           }
+          // TODO 隐患：部分callback可能不会被删除，比如传入了success、fail、complete，但是仅触发了success、complete，那么fail就不会被删除
+          // 需要有个机制来知道整个函数已经结束了，需要清理所有相关callbacks
+          const callbacks = keepAlive ? keepAliveCallbacks : {};
+          const invokeCallback = ({ id, name, params }) => {
+              const callback = callbacks[id];
+              if (callback) {
+                  callback(...params);
+                  if (!keepAlive) {
+                      delete callbacks[id];
+                  }
+              }
+              else {
+                  console.error(`uts插件[${moduleName}] ${pkg}${cls}.${methodName.replace('ByJs', '')} ${name}回调函数已释放，不能再次执行，参考文档：https://doc.dcloud.net.cn/uni-app-x/plugin/uts-plugin.html#keepalive`);
+              }
+          };
+          const context = {
+              depth: 0,
+              nested: false,
+          };
           const invokeArgs = extend({}, baseArgs, {
-              params: args.map((arg) => normalizeArg(arg)),
+              params: args.map((arg) => normalizeArg(arg, callbacks, keepAlive, context)),
           });
+          invokeArgs.nested = context.nested;
           if (async) {
               return new Promise((resolve, reject) => {
                   if ((process.env.NODE_ENV !== 'production')) {
@@ -10656,20 +10875,20 @@ var serviceContext = (function () {
           if ((process.env.NODE_ENV !== 'production')) {
               console.log('uts.invokeSync.args', invokeArgs);
           }
-          return resolveSyncResult(getProxy().invokeSync(invokeArgs, invokeCallback), returnOptions, instanceId, proxy);
+          return resolveSyncResult(invokeArgs, getProxy().invokeSync(invokeArgs, invokeCallback), returnOptions, instanceId, proxy);
       };
   }
   function initUTSStaticMethod(async, opts) {
       if (opts.main && !opts.method) {
-          if (typeof plus !== 'undefined' && plus.os.name === 'iOS') {
+          if (isUTSiOS()) {
               opts.method = 's_' + opts.name;
           }
       }
-      return initProxyFunction(async, opts, 0);
+      return initProxyFunction('method', async, opts, 0);
   }
   const initUTSProxyFunction = initUTSStaticMethod;
   function parseClassMethodName(name, methods) {
-      if (hasOwn(methods, name + 'ByJs')) {
+      if (typeof name === 'string' && hasOwn(methods, name + 'ByJs')) {
           return name + 'ByJs';
       }
       return name;
@@ -10680,8 +10899,11 @@ var serviceContext = (function () {
   function isProxyInterfaceOptions(options) {
       return !isUndefined(options.instanceId);
   }
+  function parseClassPropertySetter(name) {
+      return '__$set' + capitalize(name);
+  }
   function initUTSProxyClass(options) {
-      const { moduleName, moduleType, package: pkg, class: cls, methods, props, errMsg, } = options;
+      const { moduleName, moduleType, package: pkg, class: cls, methods, props, setters, errMsg, } = options;
       const baseOptions = {
           moduleName,
           moduleType,
@@ -10693,53 +10915,74 @@ var serviceContext = (function () {
       let constructorParams = [];
       let staticMethods = {};
       let staticProps = [];
+      let staticSetters = {};
+      let isProxyInterface = false;
       if (isProxyInterfaceOptions(options)) {
+          isProxyInterface = true;
           instanceId = options.instanceId;
       }
       else {
           constructorParams = options.constructor.params;
           staticMethods = options.staticMethods;
           staticProps = options.staticProps;
+          staticSetters = options.staticSetters;
       }
       // iOS 需要为 ByJs 的 class 构造函数（如果包含JSONObject或UTSCallback类型）补充最后一个参数
-      if (typeof plus !== 'undefined' && plus.os.name === 'iOS') {
+      if (isUTSiOS()) {
           if (constructorParams.find((p) => p.type === 'UTSCallback' || p.type.indexOf('JSONObject') > 0)) {
               constructorParams.push({ name: '_byJs', type: 'boolean' });
           }
       }
       const ProxyClass = class UTSClass {
           constructor(...params) {
+              this.__instanceId = 0;
               if (errMsg) {
                   throw new Error(errMsg);
               }
               const target = {};
               // 初始化实例 ID
-              if (isUndefined(instanceId)) {
-                  // 未指定instanceId
-                  instanceId = initProxyFunction(false, extend({ name: 'constructor', params: constructorParams }, baseOptions), 0).apply(null, params);
+              if (!isProxyInterface) {
+                  // 初始化未指定时，每次都要创建instanceId
+                  this.__instanceId = initProxyFunction('constructor', false, extend({
+                      name: 'constructor',
+                      keepAlive: false,
+                      params: constructorParams,
+                  }, baseOptions), 0).apply(null, params);
               }
-              if (!instanceId) {
+              else if (typeof instanceId === 'number') {
+                  this.__instanceId = instanceId;
+              }
+              if (!this.__instanceId) {
                   throw new Error(`new ${cls} is failed`);
               }
-              const proxy = new Proxy(this, {
+              const instance = this;
+              const proxy = new Proxy(instance, {
                   get(_, name) {
+                      // 重要：禁止响应式
+                      if (name === '__v_skip') {
+                          return true;
+                      }
                       if (!target[name]) {
                           //实例方法
                           name = parseClassMethodName(name, methods);
                           if (hasOwn(methods, name)) {
-                              const { async, params, return: returnOptions } = methods[name];
+                              const { async, keepAlive, params, return: returnOptions, } = methods[name];
                               target[name] = initUTSInstanceMethod(!!async, extend({
                                   name,
+                                  keepAlive,
                                   params,
                                   return: returnOptions,
-                              }, baseOptions), instanceId, proxy);
+                              }, baseOptions), instance.__instanceId, proxy);
                           }
                           else if (props.includes(name)) {
                               // 实例属性
                               return invokePropGetter({
                                   moduleName,
                                   moduleType,
-                                  id: instanceId,
+                                  id: instance.__instanceId,
+                                  type: 'getter',
+                                  keepAlive: false,
+                                  nested: false,
                                   name: name,
                                   errMsg,
                               });
@@ -10747,56 +10990,100 @@ var serviceContext = (function () {
                       }
                       return target[name];
                   },
+                  set(_, name, newValue) {
+                      if (props.includes(name)) {
+                          const setter = parseClassPropertySetter(name);
+                          if (!target[setter]) {
+                              const param = setters[name];
+                              if (param) {
+                                  target[setter] = initProxyFunction('setter', false, extend({
+                                      name: name,
+                                      keepAlive: false,
+                                      params: [param],
+                                  }, baseOptions), instance.__instanceId, proxy);
+                              }
+                          }
+                          target[parseClassPropertySetter(name)](newValue);
+                          return true;
+                      }
+                      return false;
+                  },
               });
-              return proxy;
+              return Object.freeze(proxy);
           }
       };
+      const staticPropSetterCache = {};
       const staticMethodCache = {};
-      return new Proxy(ProxyClass, {
+      return Object.freeze(new Proxy(ProxyClass, {
           get(target, name, receiver) {
               name = parseClassMethodName(name, staticMethods);
               if (hasOwn(staticMethods, name)) {
                   if (!staticMethodCache[name]) {
-                      const { async, params, return: returnOptions } = staticMethods[name];
+                      const { async, keepAlive, params, return: returnOptions, } = staticMethods[name];
                       // 静态方法
-                      staticMethodCache[name] = initUTSStaticMethod(!!async, extend({ name, companion: true, params, return: returnOptions }, baseOptions));
+                      staticMethodCache[name] = initUTSStaticMethod(!!async, extend({
+                          name,
+                          companion: true,
+                          keepAlive,
+                          params,
+                          return: returnOptions,
+                      }, baseOptions));
                   }
                   return staticMethodCache[name];
               }
               if (staticProps.includes(name)) {
-                  // 静态属性
-                  return invokePropGetter(extend({ name: name, companion: true }, baseOptions));
+                  return invokePropGetter(extend({
+                      name: name,
+                      companion: true,
+                      type: 'getter',
+                  }, baseOptions));
               }
               return Reflect.get(target, name, receiver);
           },
-      });
+          set(_, name, newValue) {
+              if (staticProps.includes(name)) {
+                  // 静态属性
+                  const setter = parseClassPropertySetter(name);
+                  if (!staticPropSetterCache[setter]) {
+                      const param = staticSetters[name];
+                      if (param) {
+                          staticPropSetterCache[setter] = initProxyFunction('setter', false, extend({
+                              name: name,
+                              keepAlive: false,
+                              params: [param],
+                          }, baseOptions), 0);
+                      }
+                  }
+                  staticPropSetterCache[parseClassPropertySetter(name)](newValue);
+                  return true;
+              }
+              return false;
+          },
+      }));
+  }
+  function isUTSAndroid() {
+      return typeof plus !== 'undefined' && plus.os.name === 'Android';
+  }
+  function isUTSiOS() {
+      return !isUTSAndroid();
   }
   function initUTSPackageName(name, is_uni_modules) {
-      if (typeof plus !== 'undefined' && plus.os.name === 'Android') {
+      if (isUTSAndroid()) {
           return 'uts.sdk.' + (is_uni_modules ? 'modules.' : '') + name;
       }
       return '';
   }
   function initUTSIndexClassName(moduleName, is_uni_modules) {
-      if (typeof plus === 'undefined') {
-          return '';
-      }
-      return initUTSClassName(moduleName, plus.os.name === 'iOS' ? 'IndexSwift' : 'IndexKt', is_uni_modules);
+      return initUTSClassName(moduleName, isUTSAndroid() ? 'IndexKt' : 'IndexSwift', is_uni_modules);
   }
   function initUTSClassName(moduleName, className, is_uni_modules) {
-      if (typeof plus === 'undefined') {
-          return '';
-      }
-      if (plus.os.name === 'Android') {
+      if (isUTSAndroid()) {
           return className;
       }
-      if (plus.os.name === 'iOS') {
-          return ('UTSSDK' +
-              (is_uni_modules ? 'Modules' : '') +
-              capitalize(moduleName) +
-              capitalize(className));
-      }
-      return '';
+      return ('UTSSDK' +
+          (is_uni_modules ? 'Modules' : '') +
+          capitalize(moduleName) +
+          capitalize(className));
   }
   const interfaceDefines = {};
   function registerUTSInterface(name, define) {
@@ -10881,10 +11168,14 @@ var serviceContext = (function () {
     }
   }
 
-  function backWebview (webview, callback) {
+  function backWebview (page, callback) {
+    const webview = page.$getAppWebview();
+    if (!page.__uniapp_webview) {
+      return callback(webview)
+    }
     const children = webview.children();
     if (!children || !children.length) { // 有子 webview
-      return callback()
+      return callback(webview)
     }
 
     // 如果页面有subNvues，切使用了webview组件，则返回时子webview会取错，因此需要做id匹配
@@ -10896,7 +11187,7 @@ var serviceContext = (function () {
       if (canBack) {
         childWebview.back(); // webview 返回
       } else {
-        callback();
+        callback(webview);
       }
     });
   }
@@ -10933,13 +11224,7 @@ var serviceContext = (function () {
       });
     };
 
-    const webview = currentPage.$getAppWebview();
-    if (!currentPage.__uniapp_webview) {
-      return backPage(webview)
-    }
-    backWebview(webview, () => {
-      backPage(webview);
-    });
+    backWebview(currentPage, backPage);
   }
 
   function navigateBack$1 ({
@@ -10967,7 +11252,7 @@ var serviceContext = (function () {
     uni.hideLoading();
 
     if (currentPage.$page.meta.isQuit) {
-      quit();
+      backWebview(currentPage, quit);
     } else if (currentPage.$page.id === 1 && __uniConfig.realEntryPagePath) {
       // condition
       __uniConfig.entryPagePath = __uniConfig.realEntryPagePath;
@@ -11447,9 +11732,9 @@ var serviceContext = (function () {
     });
     try {
       if (type === 'string' && parseValue(value) !== undefined) {
-        plus.storage.setItemAsync(key + STORAGE_DATA_TYPE, type);
+        plus.storage.setItemAsync(key + STORAGE_DATA_TYPE, type, () => {});
       } else {
-        plus.storage.removeItemAsync(key + STORAGE_DATA_TYPE);
+        plus.storage.removeItemAsync(key + STORAGE_DATA_TYPE, () => {});
       }
       plus.storage.setItemAsync(key, value, function () {
         invoke$1(callbackId, {
@@ -11552,7 +11837,7 @@ var serviceContext = (function () {
     key
   } = {}, callbackId) {
     // 兼容App端历史格式
-    plus.storage.removeItemAsync(key + STORAGE_DATA_TYPE);
+    plus.storage.removeItemAsync(key + STORAGE_DATA_TYPE, () => {});
     plus.storage.removeItemAsync(key, function (res) {
       invoke$1(callbackId, {
         errMsg: 'removeStorage:ok'
@@ -12028,16 +12313,16 @@ var serviceContext = (function () {
     }
   }
 
-  const callbacks$5 = {};
+  const callbacks$4 = {};
 
   function createCallbacks (namespace) {
-    let scopedCallbacks = callbacks$5[namespace];
+    let scopedCallbacks = callbacks$4[namespace];
     if (!scopedCallbacks) {
       scopedCallbacks = {
         id: 1,
         callbacks: Object.create(null)
       };
-      callbacks$5[namespace] = scopedCallbacks;
+      callbacks$4[namespace] = scopedCallbacks;
     }
     return {
       get (id) {
@@ -12918,6 +13203,7 @@ var serviceContext = (function () {
     onPush: onPush,
     offPush: offPush,
     createPushMessage: createPushMessage,
+    getChannelManager: getChannelManager,
     requireNativePlugin: requireNativePlugin$1,
     shareAppMessageDirectly: shareAppMessageDirectly,
     share: share,
@@ -13021,9 +13307,9 @@ var serviceContext = (function () {
     'error',
     'waiting'
   ];
-  const callbacks$6 = {};
+  const callbacks$5 = {};
   eventNames$2.forEach(name => {
-    callbacks$6[name] = [];
+    callbacks$5[name] = [];
   });
 
   const props = [
@@ -13094,7 +13380,7 @@ var serviceContext = (function () {
         errMsg,
         errCode
       }) => {
-        callbacks$6[state].forEach(callback => {
+        callbacks$5[state].forEach(callback => {
           if (typeof callback === 'function') {
             callback(state === 'error' ? {
               errMsg,
@@ -13105,7 +13391,7 @@ var serviceContext = (function () {
       });
       backgroundEvents.forEach((name) => {
         onMethod(`onBackgroundAudio${name[0].toUpperCase() + name.substr(1)}`, () => {
-          callbacks$6[name].forEach(callback => {
+          callbacks$5[name].forEach(callback => {
             if (typeof callback === 'function') {
               callback({});
             }
@@ -13160,7 +13446,7 @@ var serviceContext = (function () {
   eventNames$2.forEach(item => {
     const name = item[0].toUpperCase() + item.substr(1);
     BackgroundAudioManager.prototype[`on${name}`] = function (callback) {
-      callbacks$6[item].push(callback);
+      callbacks$5[item].push(callback);
     };
   });
 
@@ -21130,7 +21416,9 @@ var serviceContext = (function () {
       name: 'volume'
     },
     {
-      name: 'sessionCategory'
+      name: 'sessionCategory',
+      cache: true,
+      default: 'playback'
     },
     {
       name: 'playbackRate',
@@ -21269,24 +21557,24 @@ var serviceContext = (function () {
     createInnerAudioContext: createInnerAudioContext
   });
 
-  const callbacks$7 = [];
+  const callbacks$6 = [];
 
   onMethod('onNetworkStatusChange', res => {
-    callbacks$7.forEach(callbackId => {
+    callbacks$6.forEach(callbackId => {
       invoke$1(callbackId, res);
     });
   });
 
   function onNetworkStatusChange (callbackId) {
-    callbacks$7.push(callbackId);
+    callbacks$6.push(callbackId);
   }
 
   function offNetworkStatusChange (callbackId) {
     // 暂不支持移除所有监听
     if (callbackId) {
-      const index = callbacks$7.indexOf(callbackId);
+      const index = callbacks$6.indexOf(callbackId);
       if (index >= 0) {
-        callbacks$7.splice(index, 1);
+        callbacks$6.splice(index, 1);
       }
     }
   }
@@ -21297,25 +21585,25 @@ var serviceContext = (function () {
     offNetworkStatusChange: offNetworkStatusChange
   });
 
-  const callbacks$8 = [];
+  const callbacks$7 = [];
   const oldCallbacks = [];
 
   onMethod(ON_THEME_CHANGE, function (res) {
-    callbacks$8.forEach(callbackId => {
+    callbacks$7.forEach(callbackId => {
       invoke$1(callbackId, res);
     });
   });
 
   function onThemeChange$1 (callbackId) {
-    callbacks$8.push(callbackId);
+    callbacks$7.push(callbackId);
   }
 
   function offThemeChange$1 (callbackId) {
     // 暂不支持移除所有监听
     if (callbackId) {
-      const index = callbacks$8.indexOf(callbackId);
+      const index = callbacks$7.indexOf(callbackId);
       if (index >= 0) {
-        callbacks$8.splice(index, 1);
+        callbacks$7.splice(index, 1);
       }
     }
   }
@@ -21425,7 +21713,7 @@ var serviceContext = (function () {
     closePreviewImage: closePreviewImage
   });
 
-  const callbacks$9 = {
+  const callbacks$8 = {
     pause: null,
     resume: null,
     start: null,
@@ -21439,14 +21727,14 @@ var serviceContext = (function () {
         const state = res.state;
         delete res.state;
         delete res.errMsg;
-        if (typeof callbacks$9[state] === 'function') {
-          callbacks$9[state](res);
+        if (typeof callbacks$8[state] === 'function') {
+          callbacks$8[state](res);
         }
       });
     }
 
     onError (callback) {
-      callbacks$9.error = callback;
+      callbacks$8.error = callback;
     }
 
     onFrameRecorded (callback) {
@@ -21462,19 +21750,19 @@ var serviceContext = (function () {
     }
 
     onPause (callback) {
-      callbacks$9.pause = callback;
+      callbacks$8.pause = callback;
     }
 
     onResume (callback) {
-      callbacks$9.resume = callback;
+      callbacks$8.resume = callback;
     }
 
     onStart (callback) {
-      callbacks$9.start = callback;
+      callbacks$8.start = callback;
     }
 
     onStop (callback) {
-      callbacks$9.stop = callback;
+      callbacks$8.stop = callback;
     }
 
     pause () {
@@ -21806,7 +22094,7 @@ var serviceContext = (function () {
 
   const socketTasks$1 = Object.create(null);
   const socketTasksArray = [];
-  const callbacks$a = Object.create(null);
+  const callbacks$9 = Object.create(null);
   onMethod('onSocketTaskStateChange', ({
     socketTaskId,
     state,
@@ -21827,8 +22115,8 @@ var serviceContext = (function () {
     if (state === 'open') {
       socketTask.readyState = socketTask.OPEN;
     }
-    if (socketTask === socketTasksArray[0] && callbacks$a[state]) {
-      invoke$1(callbacks$a[state], callbackRes);
+    if (socketTask === socketTasksArray[0] && callbacks$9[state]) {
+      invoke$1(callbacks$9[state], callbackRes);
     }
     if (state === 'error' || state === 'close') {
       socketTask.readyState = socketTask.CLOSED;
@@ -21890,19 +22178,19 @@ var serviceContext = (function () {
   }
 
   function onSocketOpen (callbackId) {
-    callbacks$a.open = callbackId;
+    callbacks$9.open = callbackId;
   }
 
   function onSocketError (callbackId) {
-    callbacks$a.error = callbackId;
+    callbacks$9.error = callbackId;
   }
 
   function onSocketMessage (callbackId) {
-    callbacks$a.message = callbackId;
+    callbacks$9.message = callbackId;
   }
 
   function onSocketClose (callbackId) {
-    callbacks$a.close = callbackId;
+    callbacks$9.close = callbackId;
   }
 
   var require_context_module_1_19 = /*#__PURE__*/Object.freeze({
@@ -22037,6 +22325,18 @@ var serviceContext = (function () {
   var require_context_module_1_21 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     uploadFile: uploadFile$1
+  });
+
+  function __f__ (
+    type,
+    ...args
+  ) {
+    console[type].apply(console, args);
+  }
+
+  var require_context_module_1_22 = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    __f__: __f__
   });
 
   let cid;
@@ -22194,7 +22494,7 @@ var serviceContext = (function () {
     }
   };
 
-  var require_context_module_1_22 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_23 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     invokePushCallback: invokePushCallback,
     getPushClientId: getPushClientId,
@@ -22286,7 +22586,7 @@ var serviceContext = (function () {
     return new MPAnimation(option)
   }
 
-  var require_context_module_1_23 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_24 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     createAnimation: createAnimation
   });
@@ -22356,7 +22656,7 @@ var serviceContext = (function () {
     return new ServiceIntersectionObserver(getCurrentPageVm('createIntersectionObserver'), options)
   }
 
-  var require_context_module_1_24 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_25 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     createIntersectionObserver: createIntersectionObserver
   });
@@ -22403,7 +22703,7 @@ var serviceContext = (function () {
     return new ServiceMediaQueryObserver(getCurrentPageVm('createMediaQueryObserver'), options)
   }
 
-  var require_context_module_1_25 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_26 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     createMediaQueryObserver: createMediaQueryObserver
   });
@@ -22451,6 +22751,19 @@ var serviceContext = (function () {
         this._component,
         this._single,
         fields,
+        callback
+      );
+      return this._selectorQuery
+    }
+
+    node (callback) {
+      this._selectorQuery._push(
+        this._selector,
+        this._component,
+        this._single,
+        {
+          node: true
+        },
         callback
       );
       return this._selectorQuery
@@ -22547,7 +22860,7 @@ var serviceContext = (function () {
     return new SelectorQuery(getCurrentPageVm('createSelectorQuery'))
   }
 
-  var require_context_module_1_26 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_27 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     createSelectorQuery: createSelectorQuery
   });
@@ -22572,7 +22885,7 @@ var serviceContext = (function () {
     }, pageId);
   }
 
-  var require_context_module_1_27 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_28 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     loadFontFace: loadFontFace$1
   });
@@ -22603,19 +22916,19 @@ var serviceContext = (function () {
         });
         weex.requireModule('plus').setLanguage(locale);
       }
-      callbacks$b.forEach(callbackId => {
+      callbacks$a.forEach(callbackId => {
         invoke$1(callbackId, { locale });
       });
       return true
     }
     return false
   }
-  const callbacks$b = [];
+  const callbacks$a = [];
   function onLocaleChange (callbackId) {
-    callbacks$b.push(callbackId);
+    callbacks$a.push(callbackId);
   }
 
-  var require_context_module_1_28 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_29 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     getLocale: getLocale$1,
     setLocale: setLocale,
@@ -22630,7 +22943,7 @@ var serviceContext = (function () {
     return {}
   }
 
-  var require_context_module_1_29 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_30 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     pageScrollTo: pageScrollTo$1
   });
@@ -22638,12 +22951,12 @@ var serviceContext = (function () {
   function setPageMeta$1 (args) {
     const pages = getCurrentPages();
     if (pages.length) {
-      UniServiceJSBridge.publishHandler('setPageMeta', args, pages[pages.length - 1].$page.id);
+      UniServiceJSBridge.publishHandler('setPageMeta', args, typeof args.pageId !== 'undefined' ? args.pageId : pages[pages.length - 1].$page.id);
     }
     return {}
   }
 
-  var require_context_module_1_30 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_31 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     setPageMeta: setPageMeta$1
   });
@@ -22668,19 +22981,19 @@ var serviceContext = (function () {
 
   const hideTabBarRedDot$1 = removeTabBarBadge$1;
 
-  const callbacks$c = [];
+  const callbacks$b = [];
 
   onMethod('onTabBarMidButtonTap', res => {
-    callbacks$c.forEach(callbackId => {
+    callbacks$b.forEach(callbackId => {
       invoke$1(callbackId, res);
     });
   });
 
   function onTabBarMidButtonTap (callbackId) {
-    callbacks$c.push(callbackId);
+    callbacks$b.push(callbackId);
   }
 
-  var require_context_module_1_31 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_32 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     removeTabBarBadge: removeTabBarBadge$1,
     showTabBarRedDot: showTabBarRedDot$1,
@@ -22688,23 +23001,23 @@ var serviceContext = (function () {
     onTabBarMidButtonTap: onTabBarMidButtonTap
   });
 
-  const callbacks$d = [];
+  const callbacks$c = [];
   onMethod('onViewDidResize', res => {
-    callbacks$d.forEach(callbackId => {
+    callbacks$c.forEach(callbackId => {
       invoke$1(callbackId, res);
     });
   });
 
   function onWindowResize (callbackId) {
-    callbacks$d.push(callbackId);
+    callbacks$c.push(callbackId);
   }
 
   function offWindowResize (callbackId) {
     // 此处和微信平台一致查询不到去掉最后一个
-    callbacks$d.splice(callbacks$d.indexOf(callbackId), 1);
+    callbacks$c.splice(callbacks$c.indexOf(callbackId), 1);
   }
 
-  var require_context_module_1_32 = /*#__PURE__*/Object.freeze({
+  var require_context_module_1_33 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     onWindowResize: onWindowResize,
     offWindowResize: offWindowResize
@@ -22737,17 +23050,18 @@ var serviceContext = (function () {
   './network/socket.js': require_context_module_1_19,
   './network/update.js': require_context_module_1_20,
   './network/upload-file.js': require_context_module_1_21,
-  './plugin/push.js': require_context_module_1_22,
-  './ui/create-animation.js': require_context_module_1_23,
-  './ui/create-intersection-observer.js': require_context_module_1_24,
-  './ui/create-media-query-observer.js': require_context_module_1_25,
-  './ui/create-selector-query.js': require_context_module_1_26,
-  './ui/load-font-face.js': require_context_module_1_27,
-  './ui/locale.js': require_context_module_1_28,
-  './ui/page-scroll-to.js': require_context_module_1_29,
-  './ui/set-page-meta.js': require_context_module_1_30,
-  './ui/tab-bar.js': require_context_module_1_31,
-  './ui/window.js': require_context_module_1_32,
+  './plugin/__f__.js': require_context_module_1_22,
+  './plugin/push.js': require_context_module_1_23,
+  './ui/create-animation.js': require_context_module_1_24,
+  './ui/create-intersection-observer.js': require_context_module_1_25,
+  './ui/create-media-query-observer.js': require_context_module_1_26,
+  './ui/create-selector-query.js': require_context_module_1_27,
+  './ui/load-font-face.js': require_context_module_1_28,
+  './ui/locale.js': require_context_module_1_29,
+  './ui/page-scroll-to.js': require_context_module_1_30,
+  './ui/set-page-meta.js': require_context_module_1_31,
+  './ui/tab-bar.js': require_context_module_1_32,
+  './ui/window.js': require_context_module_1_33,
 
       };
       var req = function req(key) {
@@ -23824,6 +24138,7 @@ var serviceContext = (function () {
         return true
       });
       this.batchData.length = 0;
+      // 检查有无数据变更
       if (batchData.length) {
         UniServiceJSBridge.publishHandler(VD_SYNC, {
           data: batchData,
@@ -23831,6 +24146,9 @@ var serviceContext = (function () {
             timestamp: Date.now()
           }
         }, [this.pageId]);
+      } else {
+        // 没有数据变更，则触发回调, ask206600
+        onVdSyncCallback();
       }
     }
 

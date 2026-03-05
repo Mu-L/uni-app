@@ -517,4 +517,26 @@ describe('mp:compiler-mp-weixin', () => {
       '<vertical-drag-gesture-handler onGestureEvent="handlePan" native-view="scroll-view" shouldResponseOnMove="shouldResponse" shouldAcceptGesture="shouldAccept"></vertical-drag-gesture-handler>'
     )
   })
+
+  it('span', () => {
+    assertCodegen(
+      '<span></span>',
+      '<label class="_span"></label>'
+    )
+  })
+
+  it('match-media', () => {
+    process.env.UNI_PLATFORM = 'mp-weixin'
+    assertCodegen(
+      '<match-media min-width="300" max-width="600"><view>hello world</view></match-media>',
+      '<match-media min-width="300" max-width="600"><view>hello world</view></match-media>'
+    )
+  })
+
+  it('official-account-publish', () => {
+    assertCodegen(
+      '<official-account-publish topic="test" background-color="#f7f7f7" :limit="3" placeholder="please input"/>',
+      '<official-account-publish topic="test" background-color="#f7f7f7" limit="{{3}}" placeholder="please input"></official-account-publish>'
+    )
+  })
 })

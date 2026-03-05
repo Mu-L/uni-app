@@ -9,6 +9,7 @@ const PLATFORMS = getPlatforms()
 
 const alipayWindowMap = {
   defaultTitle: 'navigationBarTitleText',
+  navigationBarFrontColor: 'navigationBarTextStyle',
   pullRefresh: 'enablePullDownRefresh',
   allowsBounceVertical: 'allowsBounceVertical',
   titleBarColor: 'navigationBarBackgroundColor',
@@ -19,6 +20,7 @@ const alipayWindowMap = {
   titleImage: 'titleImage',
   transparentTitle: 'transparentTitle',
   titlePenetrate: 'titlePenetrate',
+  onReachBottomDistance: 'onReachBottomDistance',
   barButtonTheme: {
     key: 'navigationBarTextStyle',
     transform: function (value) {
@@ -32,7 +34,8 @@ const alipayTabBarMap = {
   textColor: 'color',
   selectedColor: 'selectedColor',
   backgroundColor: 'backgroundColor',
-  items: 'list'
+  items: 'list',
+  overlay: 'overlay'
 }
 
 const alipayTabBarItemMap = {
@@ -160,7 +163,8 @@ const NON_APP_JSON_KEYS = [
   'slotMultipleInstance',
   'uniStatistics',
   'mergeVirtualHostAttributes',
-  'styleIsolation'
+  'styleIsolation',
+  'nativeTags'
 ]
 module.exports = {
   hasOwn,

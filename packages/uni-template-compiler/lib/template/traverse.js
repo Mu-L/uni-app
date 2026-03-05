@@ -5,6 +5,7 @@ const babelTraverse = require('@babel/traverse').default
 
 const generate = require('./generate')
 const uniI18n = require('@dcloudio/uni-cli-i18n')
+const { condense } = require('@dcloudio/vue-cli-plugin-uni/lib/util')
 
 const {
   genCode,
@@ -237,7 +238,7 @@ function traverseDataNode (dataNode, state, node) {
                   // 自定义组件不支持 hidden 属性
                   const platform = state.options.platform.name
                   const platforms = ['mp-weixin', 'mp-qq', 'mp-jd', 'mp-xhs', 'mp-toutiao', 'mp-lark']
-                  if (isComponent(node.type) && platforms.includes(platform)) {
+                  if (platforms.includes(platform) && isComponent(node.type, platform)) {
                     // 字节跳动|飞书小程序自定义属性不会反应在DOM上，只能使用事件格式
                     key = `${platform === 'mp-toutiao' || platform === 'mp-lark' ? 'bind:-' : ''}${ATTR_DATA_CUSTOM_HIDDEN}`
                   } else {
@@ -288,7 +289,7 @@ function genSlotNode (slotName, slotNode, fallbackNodes, state, isStaticSlotName
     type: 'block',
     attr: {
       // 移除动态拼接的 index 部分
-      [prefix + 'if']: isStaticSlotName ? '{{$slots.' + slotName + '}}' : '{{$slots[' + slotName.replace(/^{{/, '').replace(/}}$/, '').replace(/\+\('\.'\+\S+?\)$/, '') + ']}}'
+      [prefix + 'if']: isStaticSlotName && !/^\d+$/.test(slotName) ? '{{$slots.' + slotName + '}}' : '{{$slots[' + slotName.replace(/^{{/, '').replace(/}}$/, '').replace(/\+\('\.'\+\S+?\)$/, '') + ']}}'
     },
     children: [].concat(slotNode)
   }, {
@@ -564,7 +565,8 @@ function traverseRenderList (callExprNode, state) {
     children.type) {
     children.attr = children.attr || {}
     Object.assign(children.attr, attr)
-    return children
+    // 避免 <template v-for><view v-for></view></template> 编译异常
+    return normalizeChildren(children)
   }
   return {
     type: 'block',
@@ -582,13 +584,13 @@ function getLeftStringLiteral (expr) {
 }
 
 function trim (text, type) {
-  // TODO 保留换行符？
+  // fix: 和 vue3 一致行为，防止去除 &nbsp; 等空白符
   if (type === 'left') {
     text = text.trimLeft()
   } else if (type === 'right') {
     text = text.trimRight()
   } else {
-    text = text.trim()
+    text = condense(text)
   }
   return text
 }

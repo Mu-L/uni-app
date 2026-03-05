@@ -5,6 +5,7 @@ const _completeValue = value => {
   return value > 9 ? value : ('0' + value)
 }
 
+export const isArray = Array.isArray
 export const extend = Object.assign
 
 export function isFn (fn) {
@@ -43,6 +44,17 @@ export function cached (fn) {
   return function cachedFn (str) {
     const hit = cache[str]
     return hit || (cache[str] = fn(str))
+  }
+}
+
+export function once (fn, ctx = null) {
+  let res
+  return (...args) => {
+    if (fn) {
+      res = fn.apply(ctx, args)
+      fn = null
+    }
+    return res
   }
 }
 
@@ -200,12 +212,9 @@ export function deepClone (vnodes, createElement) {
 
 export * from './uni-id-mixin'
 
+/**
+ * @deprecated
+ */
 export function sortObject (obj) {
-  const sortObj = {}
-  if (isPlainObject(obj)) {
-    Object.keys(obj).sort().forEach(key => {
-      sortObj[key] = obj[key]
-    })
-  }
-  return !Object.keys(sortObj) ? obj : sortObj
+  return obj
 }

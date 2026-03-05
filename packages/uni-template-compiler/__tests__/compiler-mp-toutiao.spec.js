@@ -103,4 +103,17 @@ describe('mp:compiler-mp-toutiao', () => {
       }
     )
   })
+
+  it('span', () => {
+    assertCodegen(
+      '<span></span>',
+      '<label class="_span"></label>'
+    )
+  })
+  it('button chooseAvatar', () => {
+    assertCodegen(
+      '<button open-type="chooseAvatar" @chooseavatar="onChooseAvatar" />',
+      "<button open-type=\"chooseAvatar\" data-event-opts=\"{{[['chooseavatar',[['onChooseAvatar',['$event']]]]]}}\" bindchooseavatar=\"__e\"></button>"
+    )
+  })
 })

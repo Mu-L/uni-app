@@ -137,7 +137,7 @@ describe('mp:compiler-extra', () => {
 
     assertCodegen(
       '<view> text </view>',
-      '<view>text</view>'
+      '<view> text </view>'
     )
 
     assertCodegen(
@@ -155,8 +155,8 @@ describe('mp:compiler-extra', () => {
       '<text>{{\'N: \'+title+"\\n′"}}</text>'
     )
     assertCodegen(
-      '<text>我是第一行\n我的第二行</text>',
-      '<text>我是第一行\n我的第二行</text>'
+      '<text>我是第一行\\n我的第二行</text>',
+      '<text>我是第一行\\n我的第二行</text>'
     )
     assertCodegen(
       '<text>我是第一行\n我的第二行1{{title}}</text>',
@@ -169,8 +169,8 @@ describe('mp:compiler-extra', () => {
     )
 
     assertCodegen(
-      '<view> text text </view>',
-      '<view>text text</view>'
+      '<view> \ttext text </view>',
+      '<view> text text </view>'
     )
     assertCodegen(
       '<view>text {{text}} text</view>',
@@ -347,7 +347,7 @@ describe('mp:compiler-extra', () => {
              <view @tap="selectDays(week,index,canlender.month === day.month,day.disable,canlender.lunar)"></view>
         </block>
     </block>`,
-      '<block wx:for="{{canlender.weeks}}" wx:for-item="weeks" wx:for-index="week" wx:key="week"><block><block wx:for="{{weeks}}" wx:for-item="day" wx:for-index="index" wx:key="index"><block>,<view data-event-opts="{{[[\'tap\',[[\'selectDays\',[week,index,canlender.month===day.month,\'$0\',\'$1\'],[[[\'canlender.weeks\',\'\',week],[\'\',\'\',index,\'disable\']],\'canlender.lunar\']]]]]}}" bindtap="__e"></view></block></block></block></block>'
+      '<block wx:for="{{canlender.weeks}}" wx:for-item="weeks" wx:for-index="week" wx:key="week"><block><block wx:for="{{weeks}}" wx:for-item="day" wx:for-index="index" wx:key="index"><block>, <view data-event-opts="{{[[\'tap\',[[\'selectDays\',[week,index,canlender.month===day.month,\'$0\',\'$1\'],[[[\'canlender.weeks\',\'\',week],[\'\',\'\',index,\'disable\']],\'canlender.lunar\']]]]]}}" bindtap="__e"></view></block></block></block></block>'
     )
     assertCodegen(
       '<view v-for="item in list">9<input type="text" v-for="meta in item.meta" :key="meta.id" v-model="meta.value"></view>',
@@ -441,6 +441,41 @@ describe('mp:compiler-extra', () => {
       '<div :class="{ active: isActive }">1</div>',
       '<view class="{{[\'_div\',(isActive)?\'active\':\'\']}}">1</view>'
     )
+    assertCodegen(
+      '<div :class="{ [active]: isActive }">1</div>',
+      '<view class="{{[\'_div\',(isActive)?(active):\'\']}}">1</view>'
+    )
+    assertCodegen(
+      '<div :class="{ [active ? \'actvieClass\' : \'unactiveClass\']: isActive }">1</div>',
+      '<view class="{{[\'_div\',(isActive)?(active?\'actvieClass\':\'unactiveClass\'):\'\']}}">1</view>'
+    )
+    assertCodegen(
+      '<div :class="{ [active ? \'actvieClass\' : \'unactiveClass\']: isActive, class1: true }">1</div>',
+      '<view class="{{[\'_div\',(isActive)?(active?\'actvieClass\':\'unactiveClass\'):\'\',(true)?\'class1\':\'\']}}">1</view>'
+    )
+
+    assertCodegen(
+      '<view :class="{ [dynamicKey]: isActive }">computed key test</div>',
+      '<view class="{{[(isActive)?(dynamicKey):\'\']}}">computed key test</view>'
+    )
+    assertCodegen(
+      '<view :class="{ [fn(\'class\')]: isActive }">computed key test</div>',
+      '<view class="{{[(isActive)?($root.m0):\'\']}}">computed key test</view>',
+      'with(this){var m0=(isActive)?fn("class"):null;$mp.data=Object.assign({},{$root:{m0:m0}})}'
+    )
+    assertCodegen(
+      '<view :class="{ staticKey: isActive }">static key test</div>',
+      '<view class="{{[(isActive)?\'staticKey\':\'\']}}">static key test</view>'
+    )
+    assertCodegen(
+      '<view :class="{ [dynamicKey]: isActive, staticKey: hasError, [anotherKey]: isValid }">mixed keys test</div>',
+      '<view class="{{[(isActive)?(dynamicKey):\'\',(hasError)?\'staticKey\':\'\',(isValid)?(anotherKey):\'\']}}">mixed keys test</view>'
+    )
+    assertCodegen(
+      '<view :class="{ [prefix + suffix]: isActive, [item.type]: item.visible }">complex computed test</div>',
+      '<view class="{{[(isActive)?(prefix+suffix):\'\',(item.visible)?(item.type):\'\']}}">complex computed test</view>'
+    )
+
     assertCodegen(
       '<p class="static" :class="{ active: isActive, \'text-danger\': hasError }">2</p>',
       '<view class="{{[\'static\',\'_p\',(isActive)?\'active\':\'\',(hasError)?\'text-danger\':\'\']}}">2</view>'
@@ -968,6 +1003,50 @@ describe('mp:compiler-extra', () => {
       '<view v-for="(item,index) in list" :key="index"><view v-if="Object.values(item.list)[0]">{{test(item.list)}}</view></view>',
       '<block wx:for="{{$root.l0}}" wx:for-item="item" wx:for-index="index" wx:key="index"><view><block wx:if="{{item.g0[0]}}"><view>{{item.m0}}</view></block></view></block>',
       'with(this){var l0=__map(list,function(item,index){var $orig=__get_orig(item);var g0=Object.values(item.list);var m0=g0[0]?test(item.list):null;return{$orig:$orig,g0:g0,m0:m0}});$mp.data=Object.assign({},{$root:{l0:l0}})}'
+    )
+  })
+
+  it('generate text trim', () => {
+    assertCodegen(
+      '<view>text</view>',
+      '<view>text</view>'
+    )
+
+    assertCodegen(
+      '<view> text </view>',
+      '<view> text </view>'
+    )
+
+    assertCodegen(
+      '<text>{{line_one_cn+\' \'}}</text>',
+      '<text>{{line_one_cn+\' \'}}</text>'
+    )
+
+    assertCodegen(
+      '<text>{{" "+line_one_cn}}</text>',
+      '<text>{{" "+line_one_cn}}</text>'
+    )
+
+    assertCodegen(
+      '<text>\\nN: {{title}}\\n′</text>',
+      '<text>{{"\\nN: "+title+"\\n′"}}</text>'
+    )
+    assertCodegen(
+      '<text>我是第一行\\n我的第二行</text>',
+      '<text>我是第一行\\n我的第二行</text>'
+    )
+    assertCodegen(
+      '<text>我是第一行\\n我的第二行1{{title}}</text>',
+      '<text>{{"我是第一行\\n我的第二行1"+title}}</text>'
+    )
+    assertCodegen(
+      `<text>我是第一行
+  我的第二行2{{title}}</text>`,
+      '<text>{{"我是第一行\\n  我的第二行2"+title}}</text>'
+    )
+    assertCodegen(
+      '<text>a \\n b c \\n &nbsp; \t</text>',
+      '<text>a \\n b c \\n   </text>'
     )
   })
 })

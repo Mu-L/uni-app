@@ -7,7 +7,8 @@ const {
   getH5Options,
   getPlatformStat,
   getPlatformPush,
-  getPlatformUniCloud
+  getPlatformUniCloud,
+  getDevUniConsoleCode
 } = require('@dcloudio/uni-cli-shared')
 
 const {
@@ -17,8 +18,10 @@ const {
 const modifyVueLoader = require('../vue-loader')
 
 const WebpackHtmlAppendPlugin = require('../../packages/webpack-html-append-plugin')
-
 const WebpackUniAppPlugin = require('../../packages/webpack-uni-app-loader/plugin/index')
+const WebpackHtmlInjectAliYunPlugin = require('../../packages/webpack-html-inject-aliyun-plugin/index')
+
+const { AliYunCloudAuthWebSDK } = require('../util')
 
 function resolve (dir) {
   return path.resolve(__dirname, '../../', dir)
@@ -38,7 +41,7 @@ const uniCloudPath = path.resolve(__dirname, '../../packages/uni-cloud/dist/inde
 function getProvides () {
   return {
     __f__: [path.resolve(__dirname, '../format-log.js'), 'log'],
-    uniCloud: [uniCloudPath, 'default'],
+    uniCloud: [uniCloudPath, 'uniCloud'],
     'wx.nextTick': [runtimePath, 'nextTick'],
     Page: [runtimePath, 'Page'],
     Component: [runtimePath, 'Component'],
@@ -50,7 +53,8 @@ function getProvides () {
 
 const plugins = [
   new WebpackUniAppPlugin(),
-  new webpack.ProvidePlugin(getProvides())
+  new webpack.ProvidePlugin(getProvides()),
+  new WebpackHtmlInjectAliYunPlugin(AliYunCloudAuthWebSDK)
 ]
 
 if (process.env.NODE_ENV !== 'production') {
@@ -103,7 +107,7 @@ module.exports = {
     } catch (e) {}
 
     const beforeCode = (useBuiltIns === 'entry' ? 'import \'@babel/polyfill\';' : '') +
-      `import 'uni-pages';import 'uni-${process.env.UNI_PLATFORM}';`
+      getDevUniConsoleCode() + `import 'uni-pages';import 'uni-${process.env.UNI_PLATFORM}';`
 
     return {
       resolve: {

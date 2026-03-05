@@ -63,12 +63,24 @@ const {
   getPlatformGlobal,
   getPlatformStat,
   getPlatformPush,
-  getPlatformUniCloud
+  getPlatformUniCloud,
+  getDevUniConsoleCode
 } = require('./platform')
 
 const uts = require('./uts')
 
-const { parseTheme, initTheme } = require('./theme')
+const {
+  parseTheme,
+  initTheme
+} = require('./theme')
+
+const {
+  createRpx2Unit,
+  defaultRpx2Unit,
+  unitRE,
+  setRpx2Unit,
+  getRpx2Unit
+} = require('./style')
 
 module.exports = {
   uts,
@@ -125,5 +137,11 @@ module.exports = {
   getPlatformPush,
   getPlatformUniCloud,
   parseTheme,
-  initTheme
+  initTheme,
+  getDevUniConsoleCode,
+  createRpx2Unit,
+  defaultRpx2Unit,
+  unitRE,
+  setRpx2Unit,
+  getRpx2Unit
 }

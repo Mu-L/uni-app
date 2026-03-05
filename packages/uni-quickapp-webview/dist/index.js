@@ -311,6 +311,10 @@ const promiseInterceptor = {
     }
     return new Promise((resolve, reject) => {
       res.then(res => {
+        if (!res) {
+          resolve(res);
+          return
+        }
         if (res[0]) {
           reject(res[0]);
         } else {
@@ -322,7 +326,7 @@ const promiseInterceptor = {
 };
 
 const SYNC_API_RE =
-  /^\$|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS/;
+  /^\$|__f__|Window$|WindowStyle$|sendHostEvent|sendNativeEvent|restoreGlobal|requireGlobal|getCurrentSubNVue|getMenuButtonBoundingClientRect|^report|interceptors|Interceptor$|getSubNVueById|requireNativePlugin|rpx2px|upx2px|hideKeyboard|canIUse|^create|Sync$|Manager$|base64ToArrayBuffer|arrayBufferToBase64|getLocale|setLocale|invokePushCallback|getWindowInfo|getDeviceInfo|getAppBaseInfo|getSystemSetting|getAppAuthorizeSetting|initUTS|requireUTS|registerUTS/;
 
 const CONTEXT_API_RE = /^create|Manager$/;
 
@@ -400,11 +404,7 @@ let deviceWidth = 0;
 let deviceDPR = 0;
 
 function checkDeviceWidth () {
-  const {
-    platform,
-    pixelRatio,
-    windowWidth
-  } = qa.getSystemInfoSync(); // uni=>qa runtime 编译目标是 uni 对象，内部不允许直接使用 uni
+  const { windowWidth, pixelRatio, platform } =  qa.getSystemInfoSync(); // uni=>qa runtime 编译目标是 uni 对象，内部不允许直接使用 uni
 
   deviceWidth = windowWidth;
   deviceDPR = pixelRatio;
@@ -443,10 +443,19 @@ const LOCALE_ES = 'es';
 
 const messages = {};
 
+function getLocaleLanguage () {
+  let localeLanguage = '';
+  {
+    localeLanguage =
+      normalizeLocale(qa.getSystemInfoSync().language) || LOCALE_EN;
+  }
+  return localeLanguage
+}
+
 let locale;
 
 {
-  locale = normalizeLocale(qa.getSystemInfoSync().language) || LOCALE_EN;
+  locale = getLocaleLanguage();
 }
 
 function initI18nMessages () {
@@ -572,7 +581,7 @@ function getLocale$1 () {
       return app.$vm.$locale
     }
   }
-  return normalizeLocale(qa.getSystemInfoSync().language) || LOCALE_EN
+  return getLocaleLanguage()
 }
 
 function setLocale$1 (locale) {
@@ -609,6 +618,7 @@ const interceptors = {
 var baseApi = /*#__PURE__*/Object.freeze({
   __proto__: null,
   upx2px: upx2px,
+  rpx2px: upx2px,
   getLocale: getLocale$1,
   setLocale: setLocale$1,
   onLocaleChange: onLocaleChange,
@@ -687,8 +697,6 @@ class EventChannel {
 
 const eventChannels = {};
 
-const eventChannelStack = [];
-
 let id = 0;
 
 function initEventChannel (events, cache = true) {
@@ -696,31 +704,30 @@ function initEventChannel (events, cache = true) {
   const eventChannel = new EventChannel(id, events);
   if (cache) {
     eventChannels[id] = eventChannel;
-    eventChannelStack.push(eventChannel);
   }
   return eventChannel
 }
 
 function getEventChannel (id) {
-  if (id) {
-    const eventChannel = eventChannels[id];
-    delete eventChannels[id];
-    return eventChannel
-  }
-  return eventChannelStack.shift()
+  const eventChannel = eventChannels[id];
+  delete eventChannels[id];
+  return eventChannel
 }
 
-var navigateTo = {
-  args (fromArgs, toArgs) {
-    const id = initEventChannel(fromArgs.events).id;
-    if (fromArgs.url) {
-      fromArgs.url = fromArgs.url + (fromArgs.url.indexOf('?') === -1 ? '?' : '&') + '__id__=' + id;
+function navigateTo () {
+  let eventChannel;
+  return {
+    args (fromArgs, toArgs) {
+      eventChannel = initEventChannel(fromArgs.events);
+      if (fromArgs.url) {
+        fromArgs.url = fromArgs.url + (fromArgs.url.indexOf('?') === -1 ? '?' : '&') + '__id__=' + eventChannel.id;
+      }
+    },
+    returnValue (fromRes, toRes) {
+      fromRes.eventChannel = eventChannel;
     }
-  },
-  returnValue (fromRes, toRes) {
-    fromRes.eventChannel = getEventChannel();
   }
-};
+}
 
 function findExistsPageIndex (url) {
   const pages = getCurrentPages();
@@ -853,7 +860,7 @@ function populateParameters (result) {
   let _SDKVersion = SDKVersion;
 
   // hostLanguage
-  const hostLanguage = language.replace(/_/g, '-');
+  const hostLanguage = (language || '').replace(/_/g, '-');
 
   // wx.getAccountInfoSync
 
@@ -864,6 +871,7 @@ function populateParameters (result) {
     appVersionCode: process.env.UNI_APP_VERSION_CODE,
     appLanguage: getAppLanguage(hostLanguage),
     uniCompileVersion: process.env.UNI_COMPILER_VERSION,
+    uniCompilerVersion: process.env.UNI_COMPILER_VERSION,
     uniRuntimeVersion: process.env.UNI_COMPILER_VERSION,
     uniPlatform: process.env.UNI_SUB_PLATFORM || process.env.UNI_PLATFORM,
     deviceBrand,
@@ -887,7 +895,8 @@ function populateParameters (result) {
     ua: undefined,
     hostPackageName: undefined,
     browserName: undefined,
-    browserVersion: undefined
+    browserVersion: undefined,
+    isUniAppX: false
   };
 
   Object.assign(result, parameters, extraParam);
@@ -944,7 +953,7 @@ var getSystemInfo = {
 };
 
 const protocols = {
-  navigateTo,
+  navigateTo: navigateTo(),
   redirectTo,
   previewImage,
   getSystemInfo,
@@ -1290,12 +1299,20 @@ const offPushMessage = (fn) => {
   }
 };
 
+function __f__ (
+  type,
+  ...args
+) {
+  console[type].apply(console, args);
+}
+
 var api = /*#__PURE__*/Object.freeze({
   __proto__: null,
   getPushClientId: getPushClientId,
   onPushMessage: onPushMessage,
   offPushMessage: offPushMessage,
-  invokePushCallback: invokePushCallback
+  invokePushCallback: invokePushCallback,
+  __f__: __f__
 });
 
 function findVmByVueId (vm, vuePid) {
@@ -2084,7 +2101,10 @@ function parseBaseApp (vm, {
 
       delete this.$options.mpType;
       delete this.$options.mpInstance;
-      if (this.mpType === 'page' && typeof getApp === 'function') { // hack vue-i18n
+      if (
+        ( this.mpType === 'page') &&
+        typeof getApp === 'function'
+      ) { // hack vue-i18n
         const app = getApp();
         if (app.$vm && app.$vm.$i18n) {
           this._i18n = app.$vm.$i18n;
@@ -2130,12 +2150,21 @@ function parseBaseApp (vm, {
     });
   }
 
-  initAppLocale(Vue, vm, normalizeLocale(qa.getSystemInfoSync().language) || LOCALE_EN);
+  initAppLocale(Vue, vm, getLocaleLanguage$1());
 
   initHooks(appOptions, hooks);
   initUnknownHooks(appOptions, vm.$options);
 
   return appOptions
+}
+
+function getLocaleLanguage$1 () {
+  let localeLanguage = '';
+  {
+    localeLanguage =
+      normalizeLocale(qa.getSystemInfoSync().language) || LOCALE_EN;
+  }
+  return localeLanguage
 }
 
 const mocks = ['nodeId', 'componentName', '_componentId', 'uniquePrefix'];
@@ -2593,7 +2622,7 @@ if (typeof Proxy !== 'undefined' && "quickapp-webview" !== 'app-plus') {
       uni[name] = promisify(name, todoApis[name]);
     });
     Object.keys(extraApi).forEach(name => {
-      uni[name] = promisify(name, todoApis[name]);
+      uni[name] = promisify(name, extraApi[name]);
     });
   }
 

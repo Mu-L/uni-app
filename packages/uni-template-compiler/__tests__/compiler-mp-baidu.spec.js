@@ -203,8 +203,8 @@ describe('mp:compiler-mp-baidu', () => {
       '<text>{{\'N: \'+title+"\\\\n′"}}</text>'
     )
     assertCodegen(
-      '<text>我是第一行1\n我的第二行</text>',
-      '<text>我是第一行1\n我的第二行</text>'
+      '<text>我是第一行1\\n我的第二行</text>',
+      '<text>我是第一行1\\n我的第二行</text>'
     )
     assertCodegen(
       '<text>我是第一行2\n我的第二行1{{title}}</text>',
@@ -214,6 +214,12 @@ describe('mp:compiler-mp-baidu', () => {
       `<text>我是第一行3
     我的第二行2{{title}}</text>`,
       '<text>{{"我是第一行3\\\\n    我的第二行2"+title}}</text>'
+    )
+  })
+  it('span', () => {
+    assertCodegen(
+      '<span></span>',
+      '<label class="_span"></label>'
     )
   })
 })

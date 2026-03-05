@@ -65,7 +65,7 @@ function _handleNetworkInfo (result) {
       result.networkType = 'none'
       break
     case 'WWAN':
-      // TODO ?
+      // TODO 无线广域网，微信没有对应的值，使用 3g 代替 https://opendocs.alipay.com/mini/api/network-status#success%20%E5%9B%9E%E8%B0%83%E5%87%BD%E6%95%B0
       result.networkType = '3g'
       break
     default:
@@ -76,7 +76,7 @@ function _handleNetworkInfo (result) {
 }
 
 const protocols = { // 需要做转换的 API 列表
-  navigateTo: navigateTo(),
+  navigateTo: my.canIUse('page.getOpenerEventChannel') ? {} : navigateTo(),
   redirectTo,
   returnValue (methodName, res = {}) { // 通用 returnValue 解析
     if (res.error || res.errorMessage) {
@@ -144,6 +144,11 @@ const protocols = { // 需要做转换的 API 列表
   showModal ({
     showCancel = true
   } = {}) {
+    if (my.canIUse('showModal')) {
+      return {
+        name: 'showModal'
+      }
+    }
     if (showCancel) {
       return {
         name: 'confirm',
@@ -174,36 +179,42 @@ const protocols = { // 需要做转换的 API 列表
   showToast ({
     icon = 'success'
   } = {}) {
-    const args = {
-      title: 'content',
-      icon: 'type',
-      image: false,
-      mask: false
-    }
     if (icon === 'loading') {
       return {
         name: 'showLoading',
-        args
+        args: {
+          title: 'content'
+        }
       }
     }
     return {
       name: 'showToast',
-      args
+      args (fromArgs, toArgs) {
+        toArgs.content = fromArgs.title
+        toArgs.type = fromArgs.icon == null ? icon : fromArgs.icon
+      }
     }
   },
   showActionSheet: {
     name: 'showActionSheet',
     args: {
-      itemList: 'items',
-      itemColor: false
+      itemList: 'items'
     },
     returnValue: {
       index: 'tapIndex'
     }
   },
   showLoading: {
-    args: {
-      title: 'content'
+    args (
+      fromArgs,
+      toArgs
+    ) {
+      if (!fromArgs.mask) {
+        toArgs.mask = false
+      }
+      if (fromArgs.title) {
+        toArgs.content = fromArgs.title
+      }
     }
   },
   uploadFile: {
@@ -244,8 +255,7 @@ const protocols = { // 需要做转换的 API 列表
   },
   connectSocket: {
     args: {
-      method: false,
-      protocols: false
+      method: false
     }
     // TODO 有没有返回值还需要测试下
   },
@@ -317,8 +327,10 @@ const protocols = { // 需要做转换的 API 列表
     }
   },
   openLocation: {
-    args: {
-      // TODO address 参数在阿里上是必传的
+    args (fromArgs, toArgs) {
+      if (!fromArgs.scale) {
+        toArgs.scale = 18
+      }
     }
   },
   getNetworkType: {
@@ -364,6 +376,13 @@ const protocols = { // 需要做转换的 API 列表
     name: 'getClipboard',
     returnValue: {
       text: 'data'
+    }
+  },
+  pageScrollTo: {
+    args (fromArgs, toArgs) {
+      if (fromArgs.duration === undefined) {
+        toArgs.duration = 300
+      }
     }
   },
   login: {
@@ -480,6 +499,14 @@ const protocols = { // 需要做转换的 API 列表
       result.detailInfo = info.address
       result.telNumber = info.mobilePhone
       result.errMsg = result.resultStatus
+    }
+  },
+  openDocument: {
+    args (fromArgs, toArgs) {
+      if (typeof fromArgs.showMenu === 'boolean') {
+        // 支付宝小程序 showMenu 类型为 string, https://opendocs.alipay.com/mini/api/mwpprc
+        toArgs.showMenu = String(fromArgs.showMenu)
+      }
     }
   }
 }

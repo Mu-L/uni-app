@@ -1,5 +1,7 @@
 const fs = require('fs')
 const path = require('path')
+const { getSubpackageRoots } = require('@dcloudio/uni-cli-shared/lib/pages')
+const { normalizePath } = require('@dcloudio/uni-cli-shared/lib/util')
 
 const COMPONENTS_DIR_NAME = 'wxcomponents'
 
@@ -26,8 +28,11 @@ module.exports = {
     const copyOptions = [
       // 'sitemap.json',
       // 'ext.json',
-      'custom-tab-bar'
+      'custom-tab-bar',
+      'project.config.json'
     ]
+    const dirs = getSubpackageRoots().map((root) => normalizePath(path.join(root, COMPONENTS_DIR_NAME)))
+    copyOptions.push(...dirs)
     const workers = platformOptions.workers
     workers && copyOptions.push(typeof workers === 'object' ? workers.path : workers)
 

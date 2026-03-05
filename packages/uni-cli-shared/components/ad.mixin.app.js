@@ -64,12 +64,7 @@ class AdBase {
         detail: detail
       }
 
-      if (this._retry && code === -5008) {
-        this._loadAd()
-        return
-      }
-
-      if (this._retry && this._retryCount < RETRY_COUNT) {
+      if (code === -5008 && this._retry && this._retryCount < RETRY_COUNT) {
         this._retryCount += 1
         this._loadAd()
         return
@@ -431,8 +426,11 @@ export default {
       }
     },
     // 服务器回调透传参数，仅在创建广告实例时可传递参数，如果发生变化需要重新创建广告实例
-    urlCallback () {
-      this._removeInstance()
+    urlCallback: {
+      deep: true,
+      handler () {
+        this._removeInstance()
+      }
     }
   },
   created () {
